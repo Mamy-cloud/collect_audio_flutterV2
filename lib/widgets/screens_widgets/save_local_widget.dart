@@ -653,59 +653,6 @@ class CollecteCard extends StatelessWidget {
                     ),
                   ],
 
-                  // ── RGPD ────────────────────────────────────────────────
-                  const SizedBox(height: 10),
-                  Row(
-                    children: [
-                      Icon(
-                        accepteRgpd
-                            ? Icons.verified_user_outlined
-                            : Icons.shield_outlined,
-                        size:  13,
-                        color: accepteRgpd
-                            ? const Color(0xFF4CAF50)
-                            : AppColors.textMuted,
-                      ),
-                      const SizedBox(width: 6),
-                      Text(
-                        accepteRgpd
-                            ? 'Témoin a accepté les données RGPD'
-                            : 'RGPD non accepté',
-                        style: AppTextStyles.label.copyWith(
-                          fontSize: 11,
-                          color: accepteRgpd
-                              ? const Color(0xFF4CAF50)
-                              : AppColors.textMuted,
-                        ),
-                      ),
-                    ],
-                  ),
-
-                  // ── Signature ────────────────────────────────────────────
-                  if (signatureUrl != null &&
-                      File(signatureUrl).existsSync()) ...[
-                    const SizedBox(height: 10),
-                    Row(
-                      children: [
-                        const Icon(Icons.draw_outlined,
-                            size: 13, color: AppColors.textMuted),
-                        const SizedBox(width: 6),
-                        Text('Signature enregistrée',
-                            style: AppTextStyles.label
-                                .copyWith(fontSize: 11)),
-                      ],
-                    ),
-                    const SizedBox(height: 8),
-                    ClipRRect(
-                      borderRadius: BorderRadius.circular(8),
-                      child: Image.file(
-                        File(signatureUrl),
-                        height: 60,
-                        width:  double.infinity,
-                        fit:    BoxFit.contain,
-                      ),
-                    ),
-                  ],
                 ],
               ),
             ),
