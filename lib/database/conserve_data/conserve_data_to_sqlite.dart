@@ -24,7 +24,7 @@ class ConserveDataToSqlite {
     return destPath;
   }
 
-  // ── INSERT — lié à l'utilisateur connecté ────────────────────────────────
+  // ── INSERT ────────────────────────────────────────────────────────────────
 
   static Future<String> insertInfoPersoTemoin({
     required String            nom,
@@ -34,6 +34,8 @@ class ConserveDataToSqlite {
     String?                    region,
     String?                    imgTemoinPath,
     List<Map<String, String>>? contacts,
+    String?                    signatureUrl,
+    bool                       accepteRgpd = false,
   }) async {
     final id     = _uuid.v4();
     final userId = SessionService.currentUserId;
@@ -53,13 +55,15 @@ class ConserveDataToSqlite {
       'region':         region,
       'img_temoin':     imgDestPath,
       'contacts':       jsonEncode(contacts ?? []),
+      'signature_url':  signatureUrl,
+      'accepte_rgpd':   accepteRgpd ? 1 : 0,
       'date_creation':  DateTime.now().toIso8601String(),
     });
 
     return id;
   }
 
-  // ── SELECT — uniquement les témoins de l'utilisateur connecté ─────────────
+  // ── SELECT tous ────────────────────────────────────────────────────────────
 
   static Future<List<Map<String, dynamic>>> getAllInfoPersoTemoin() async {
     final userId = SessionService.currentUserId;

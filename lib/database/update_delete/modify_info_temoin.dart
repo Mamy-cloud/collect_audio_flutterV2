@@ -12,6 +12,8 @@ class ModifyInfoTemoin {
     String?          region,
     String?          imgTemoin,
     List<Map<String, String>>? contacts,
+    String?          signatureUrl,
+    bool             accepteRgpd = false,
   }) async {
     final db = CreateTableTemoin.db;
     await db.update(
@@ -24,6 +26,8 @@ class ModifyInfoTemoin {
         'region':         region,
         'img_temoin':     imgTemoin,
         'contacts':       jsonEncode(contacts ?? []),
+        'signature_url':  signatureUrl,
+        'accepte_rgpd':   accepteRgpd ? 1 : 0,
       },
       where:     'id = ?',
       whereArgs: [id],

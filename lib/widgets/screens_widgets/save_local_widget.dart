@@ -342,6 +342,64 @@ class InfoPersoCard extends StatelessWidget {
                     ),
                   )),
                 ],
+
+                // ── RGPD ──────────────────────────────────────────────────
+                const SizedBox(height: 14),
+                const Divider(height: 1, color: Color(0xFF333333)),
+                const SizedBox(height: 12),
+                Row(
+                  children: [
+                    Icon(
+                      (temoin['accepte_rgpd'] as int? ?? 0) == 1
+                          ? Icons.shield_outlined
+                          : Icons.shield_moon_outlined,
+                      size:  14,
+                      color: (temoin['accepte_rgpd'] as int? ?? 0) == 1
+                          ? const Color(0xFF4CAF50)
+                          : AppColors.textMuted,
+                    ),
+                    const SizedBox(width: 8),
+                    Text(
+                      (temoin['accepte_rgpd'] as int? ?? 0) == 1
+                          ? 'Témoin a accepté le RGPD'
+                          : 'RGPD non accepté',
+                      style: AppTextStyles.label.copyWith(
+                        fontSize: 12,
+                        color: (temoin['accepte_rgpd'] as int? ?? 0) == 1
+                            ? const Color(0xFF4CAF50)
+                            : AppColors.textMuted,
+                      ),
+                    ),
+                  ],
+                ),
+
+                // ── Signature ─────────────────────────────────────────────
+                if ((temoin['signature_url'] as String?) != null &&
+                    File(temoin['signature_url'] as String).existsSync()) ...[
+                  const SizedBox(height: 12),
+                  Text('Signature',
+                      style: AppTextStyles.label.copyWith(
+                          fontSize: 11,
+                          fontWeight: FontWeight.w600,
+                          letterSpacing: 0.8)),
+                  const SizedBox(height: 8),
+                  Container(
+                    height: 80,
+                    width:  double.infinity,
+                    decoration: BoxDecoration(
+                      color:        AppColors.inputFill,
+                      borderRadius: BorderRadius.circular(8),
+                      border: Border.all(color: const Color(0xFF333333)),
+                    ),
+                    child: ClipRRect(
+                      borderRadius: BorderRadius.circular(8),
+                      child: Image.file(
+                        File(temoin['signature_url'] as String),
+                        fit: BoxFit.contain,
+                      ),
+                    ),
+                  ),
+                ],
               ],
             ),
           ),
@@ -467,10 +525,8 @@ class CollecteCard extends StatelessWidget {
     final accomp  = _val(q, 'accompagnant');
     final contact = _val(q, 'contact');
     final date    = (collecte['created_at'] as String? ?? '').split('T').first;
-    final audio        = collecte['url_audio'] as String?;
-    final duree        = _formatDuree(collecte['duree_audio']);
-    final signatureUrl = collecte['signature_url'] as String?;
-    final accepteRgpd  = (collecte['accepte_rgpd'] as int? ?? 0) == 1;
+    final audio = collecte['url_audio'] as String?;
+    final duree = _formatDuree(collecte['duree_audio']);
 
     return GestureDetector(
       onTap: () => showModalBottomSheet(
@@ -590,68 +646,6 @@ class CollecteCard extends StatelessWidget {
                     ),
                   ],
 
-                  // ── RGPD ────────────────────────────────────────────────
-                  const SizedBox(height: 10),
-                  Row(
-                    children: [
-                      Icon(
-                        accepteRgpd
-                            ? Icons.shield_outlined
-                            : Icons.shield_moon_outlined,
-                        size:  13,
-                        color: accepteRgpd
-                            ? const Color(0xFF4CAF50)
-                            : AppColors.textMuted,
-                      ),
-                      const SizedBox(width: 6),
-                      Text(
-                        accepteRgpd
-                            ? 'Témoin a accepté le RGPD'
-                            : 'RGPD non accepté',
-                        style: AppTextStyles.label.copyWith(
-                          fontSize: 11,
-                          color: accepteRgpd
-                              ? const Color(0xFF4CAF50)
-                              : AppColors.textMuted,
-                        ),
-                      ),
-                    ],
-                  ),
-
-                  // ── Signature ────────────────────────────────────────────
-                  if (signatureUrl != null &&
-                      File(signatureUrl).existsSync()) ...[
-                    const SizedBox(height: 10),
-                    const Divider(height: 1, color: Color(0xFF2A2A2A)),
-                    const SizedBox(height: 10),
-                    Row(
-                      children: [
-                        const Icon(Icons.draw_outlined,
-                            size: 13, color: AppColors.textMuted),
-                        const SizedBox(width: 6),
-                        Text('Signature',
-                            style: AppTextStyles.label
-                                .copyWith(fontSize: 11)),
-                      ],
-                    ),
-                    const SizedBox(height: 8),
-                    Container(
-                      height: 80,
-                      decoration: BoxDecoration(
-                        color:        AppColors.inputFill,
-                        borderRadius: BorderRadius.circular(8),
-                        border: Border.all(
-                            color: const Color(0xFF333333)),
-                      ),
-                      child: ClipRRect(
-                        borderRadius: BorderRadius.circular(8),
-                        child: Image.file(
-                          File(signatureUrl),
-                          fit: BoxFit.contain,
-                        ),
-                      ),
-                    ),
-                  ],
 
                 ],
               ),

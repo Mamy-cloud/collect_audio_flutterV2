@@ -1,4 +1,4 @@
-// save_questionnaire.dart.
+// save_questionnaire.dart
 import 'dart:convert';
 import 'package:uuid/uuid.dart';
 import '../create_table/create_table_temoin.dart';
@@ -41,8 +41,6 @@ class SaveQuestionnaire {
         'questionnaire': jsonEncode(questionnaire),
         'url_audio':     urlAudio,
       'duree_audio':   dureeAudio,
-      'signature_url': signatureUrl,
-      'accepte_rgpd':  accepteRgpd ? 1 : 0,
         'created_at':    DateTime.now().toIso8601String(),
       },
     );

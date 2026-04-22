@@ -1,6 +1,6 @@
 // create_table_temoin.dart
 // Android/iOS → sqflite natif
-// Version 6 — ajout user_id dans info_perso_temoin
+// Version 9 — signature_url et accepte_rgpd déplacés dans info_perso_temoin
 
 import 'package:sqflite/sqflite.dart';
 import 'package:path/path.dart';
@@ -19,7 +19,7 @@ class CreateTableTemoin {
 
     _db = await openDatabase(
       path,
-      version: 8,
+      version: 9,
       onCreate: (db, version) async {
         await _createInfoPersoTemoin(db);
         await _createLoginUser(db);
@@ -63,12 +63,13 @@ class CreateTableTemoin {
             "ALTER TABLE collect_info_from_temoin ADD COLUMN accepte_rgpd INTEGER NOT NULL DEFAULT 0",
           );
         }
-        if (oldVersion < 8) {
+        if (oldVersion < 9) {
+          // Déplace signature et RGPD dans info_perso_temoin
           await db.execute(
-            "ALTER TABLE collect_info_from_temoin ADD COLUMN signature_url TEXT",
+            "ALTER TABLE info_perso_temoin ADD COLUMN signature_url TEXT",
           );
           await db.execute(
-            "ALTER TABLE collect_info_from_temoin ADD COLUMN accepte_rgpd INTEGER NOT NULL DEFAULT 0",
+            "ALTER TABLE info_perso_temoin ADD COLUMN accepte_rgpd INTEGER NOT NULL DEFAULT 0",
           );
         }
       },
@@ -79,26 +80,16 @@ class CreateTableTemoin {
     );
   }
 
-  // ─────────────────────────────────────────────────────────────────────────
-  // UTILISATEURS DE TEST
-  // ─────────────────────────────────────────────────────────────────────────
-
   static Future<void> _insertTestUsers(Database db) async {
-    // Utilisateur 1 — login: user1 / code: 1234
     await db.execute('''
       INSERT OR IGNORE INTO login_user (id, identifiant, password, created_at)
       VALUES ('user_id_001', 'user1', '1234', '2024-01-01T00:00:00.000')
     ''');
-    // Utilisateur 2 — login: user2 / code: 5678
     await db.execute('''
       INSERT OR IGNORE INTO login_user (id, identifiant, password, created_at)
       VALUES ('user_id_002', 'user2', '5678', '2024-01-01T00:00:00.000')
     ''');
   }
-
-  // ─────────────────────────────────────────────────────────────────────────
-  // CRÉATION DES TABLES
-  // ─────────────────────────────────────────────────────────────────────────
 
   static Future<void> _createInfoPersoTemoin(Database db) async {
     await db.execute('''
@@ -112,6 +103,8 @@ class CreateTableTemoin {
         region         TEXT,
         img_temoin     TEXT,
         contacts       TEXT NOT NULL DEFAULT '[]',
+        signature_url  TEXT,
+        accepte_rgpd   INTEGER NOT NULL DEFAULT 0,
         date_creation  TEXT NOT NULL,
         FOREIGN KEY (user_id) REFERENCES login_user(id)
       )
@@ -137,8 +130,6 @@ class CreateTableTemoin {
         questionnaire TEXT NOT NULL DEFAULT '[]',
         url_audio     TEXT,
         duree_audio   INTEGER NOT NULL DEFAULT 0,
-        signature_url TEXT,
-        accepte_rgpd  INTEGER NOT NULL DEFAULT 0,
         synced        INTEGER NOT NULL DEFAULT 0,
         created_at    TEXT NOT NULL,
         FOREIGN KEY (user_id) REFERENCES login_user(id)
@@ -153,10 +144,6 @@ class CreateTableTemoin {
       )
     ''');
   }
-
-  // ─────────────────────────────────────────────────────────────────────────
-  // LOGIN USER — CRUD
-  // ─────────────────────────────────────────────────────────────────────────
 
   static Future<Map<String, dynamic>?> getUserByIdentifiant(
       String identifiant) async {

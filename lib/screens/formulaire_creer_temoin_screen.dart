@@ -8,10 +8,11 @@ import '../database/conserve_data/conserve_data_to_sqlite.dart';
 import '../database/update_delete/modify_info_temoin.dart';
 import '../widgets/global/app_styles.dart';
 import '../widgets/screens_widgets/formulaire_creer_temoin_widgets.dart';
+import '../widgets/screens_widgets/rgpd_widget.dart';
+import 'signature_screen.dart';
 
 class FormulaireCreerTemoinScreen extends StatefulWidget {
   final Map<String, dynamic>? temoin;
-
   const FormulaireCreerTemoinScreen({super.key, this.temoin});
 
   @override
@@ -25,12 +26,14 @@ class _FormulaireCreerTemoinScreenState
   final _prenomCtrl = TextEditingController();
   final _dateCtrl   = TextEditingController();
 
-  String? _deptId;    // id pour le dropdown
-  String? _regionId;   // id pour le dropdown
-  String? _deptNom;   // nom réel sauvegardé
-  String? _regionNom; // nom réel sauvegardé
+  String? _deptId;
+  String? _regionId;
+  String? _deptNom;
+  String? _regionNom;
   String? _imgPath;
-  bool    _isLoading = false;
+  bool    _isLoading  = false;
+  bool    _accepteRgpd = false;
+  String? _signatureUrl;
   List<Map<String, String>> _contacts = [];
 
   bool get _isEditMode => widget.temoin != null;
@@ -43,27 +46,26 @@ class _FormulaireCreerTemoinScreenState
       _nomCtrl.text    = t['nom']            as String? ?? '';
       _prenomCtrl.text = t['prenom']         as String? ?? '';
       _dateCtrl.text   = t['date_naissance'] as String? ?? '';
-      // En mode édition les valeurs stockées sont déjà des noms
-      // On cherche l'id correspondant pour le dropdown
-      final deptNom   = t['departement'] as String?;
-      final regionNom = t['region']      as String?;
-      _deptNom   = deptNom;
-      _regionNom = regionNom;
-      _deptId    = deptNom != null
+      final deptNom    = t['departement']    as String?;
+      final regionNom  = t['region']         as String?;
+      _deptNom         = deptNom;
+      _regionNom       = regionNom;
+      _deptId = deptNom != null
           ? kDepartements.firstWhere(
               (d) => d['nom'] == deptNom,
               orElse: () => {'id': deptNom},
             )['id'] as String?
           : null;
-      _regionId  = regionNom != null
+      _regionId = regionNom != null
           ? kRegions.firstWhere(
               (r) => r['nom'] == regionNom,
               orElse: () => {'id': regionNom},
             )['id'] as String?
           : null;
-      _imgPath         = t['img_temoin']     as String?;
+      _imgPath      = t['img_temoin']   as String?;
+      _signatureUrl = t['signature_url'] as String?;
+      _accepteRgpd  = (t['accepte_rgpd'] as int? ?? 0) == 1;
 
-      // Charger les contacts existants
       try {
         final raw = t['contacts'];
         if (raw is List) {
@@ -122,9 +124,7 @@ class _FormulaireCreerTemoinScreenState
     final picker = ImagePicker();
     final picked = await picker.pickImage(
         source: ImageSource.gallery, imageQuality: 80);
-    if (picked != null && mounted) {
-      setState(() => _imgPath = picked.path);
-    }
+    if (picked != null && mounted) setState(() => _imgPath = picked.path);
   }
 
   Future<void> _takePhoto() async {
@@ -132,9 +132,7 @@ class _FormulaireCreerTemoinScreenState
     final picker = ImagePicker();
     final picked = await picker.pickImage(
         source: ImageSource.camera, imageQuality: 80);
-    if (picked != null && mounted) {
-      setState(() => _imgPath = picked.path);
-    }
+    if (picked != null && mounted) setState(() => _imgPath = picked.path);
   }
 
   void _removeImage() => setState(() => _imgPath = null);
@@ -152,6 +150,12 @@ class _FormulaireCreerTemoinScreenState
     if (_regionId == null) {
       _snack('Sélectionnez une région'); return;
     }
+    if (!_accepteRgpd) {
+      _snack('Le témoin doit accepter la politique RGPD'); return;
+    }
+    if (_signatureUrl == null) {
+      _snack('La signature du témoin est requise'); return;
+    }
 
     setState(() => _isLoading = true);
 
@@ -167,6 +171,8 @@ class _FormulaireCreerTemoinScreenState
           region:        _regionNom,
           imgTemoin:     _imgPath,
           contacts:      _contacts,
+          signatureUrl:  _signatureUrl,
+          accepteRgpd:   _accepteRgpd,
         );
       } else {
         await ConserveDataToSqlite.insertInfoPersoTemoin(
@@ -178,6 +184,8 @@ class _FormulaireCreerTemoinScreenState
           region:        _regionNom,
           imgTemoinPath: _imgPath,
           contacts:      _contacts,
+          signatureUrl:  _signatureUrl,
+          accepteRgpd:   _accepteRgpd,
         );
       }
 
@@ -292,19 +300,39 @@ class _FormulaireCreerTemoinScreenState
                         orElse: () => {'nom': v},
                       )['nom'] as String?
                     : null;
-                setState(() {
-                  _regionId  = v;
-                  _regionNom = nom;
-                });
+                setState(() { _regionId = v; _regionNom = nom; });
               },
             ),
             const SizedBox(height: 14),
 
-            // ── Contacts ─────────────────────────────────────────────────
             ContactsField(
               contacts:  _contacts,
-              onChanged: (updated) =>
-                  setState(() => _contacts = updated),
+              onChanged: (updated) => setState(() => _contacts = updated),
+            ),
+
+            const SizedBox(height: 24),
+
+            // ── RGPD ─────────────────────────────────────────────────────
+            RgpdCheckbox(
+              accepted:  _accepteRgpd,
+              onChanged: (v) => setState(() => _accepteRgpd = v ?? false),
+            ),
+
+            const SizedBox(height: 14),
+
+            // ── Signature ─────────────────────────────────────────────────
+            _SignatureButton(
+              signatureUrl: _signatureUrl,
+              onTap: () => showModalBottomSheet(
+                context:            context,
+                isScrollControlled: true,
+                backgroundColor:    Colors.transparent,
+                builder: (_) => SignatureScreen(
+                  onSave: (path) =>
+                      setState(() => _signatureUrl = path),
+                ),
+              ),
+              onRemove: () => setState(() => _signatureUrl = null),
             ),
 
             const SizedBox(height: 28),
@@ -341,16 +369,12 @@ class _FormulaireCreerTemoinScreenState
             crossAxisAlignment: CrossAxisAlignment.stretch,
             children: [
               Expanded(child: _imgBtn(
-                icon:      Icons.camera_alt_outlined,
-                label:     'Caméra',
-                onPressed: _takePhoto,
-              )),
+                icon: Icons.camera_alt_outlined, label: 'Caméra',
+                onPressed: _takePhoto)),
               const SizedBox(width: 12),
               Expanded(child: _imgBtn(
-                icon:      Icons.photo_library_outlined,
-                label:     'Galerie',
-                onPressed: _pickImage,
-              )),
+                icon: Icons.photo_library_outlined, label: 'Galerie',
+                onPressed: _pickImage)),
             ],
           ),
         ),
@@ -359,8 +383,7 @@ class _FormulaireCreerTemoinScreenState
   }
 
   Widget _imgBtn({
-    required IconData     icon,
-    required String       label,
+    required IconData icon, required String label,
     required VoidCallback onPressed,
   }) {
     return OutlinedButton.icon(
@@ -369,8 +392,7 @@ class _FormulaireCreerTemoinScreenState
         foregroundColor: AppColors.textMuted,
         side:    const BorderSide(color: Color(0xFF333333)),
         padding: const EdgeInsets.symmetric(vertical: 12),
-        shape:   RoundedRectangleBorder(
-            borderRadius: BorderRadius.circular(10)),
+        shape:   RoundedRectangleBorder(borderRadius: BorderRadius.circular(10)),
       ),
       icon:  Icon(icon, size: 20),
       label: Text(label, style: const TextStyle(fontSize: 13)),
@@ -382,10 +404,8 @@ class _FormulaireCreerTemoinScreenState
     return Stack(children: [
       ClipRRect(
         borderRadius: BorderRadius.circular(10),
-        child: Image.file(
-          File(_imgPath!),
-          height: zoneHeight, width: double.infinity, fit: BoxFit.cover,
-        ),
+        child: Image.file(File(_imgPath!),
+            height: zoneHeight, width: double.infinity, fit: BoxFit.cover),
       ),
       Positioned(
         top: 6, right: 6,
@@ -406,5 +426,109 @@ class _FormulaireCreerTemoinScreenState
   void dispose() {
     _nomCtrl.dispose(); _prenomCtrl.dispose(); _dateCtrl.dispose();
     super.dispose();
+  }
+}
+
+// ── Bouton / aperçu signature ──────────────────────────────────────────────────
+
+class _SignatureButton extends StatelessWidget {
+  final String?      signatureUrl;
+  final VoidCallback onTap;
+  final VoidCallback onRemove;
+
+  const _SignatureButton({
+    required this.signatureUrl,
+    required this.onTap,
+    required this.onRemove,
+  });
+
+  @override
+  Widget build(BuildContext context) {
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        Row(
+          children: [
+            Text('Signature du témoin *', style: AppTextStyles.label),
+            const SizedBox(width: 8),
+            if (signatureUrl != null)
+              const Icon(Icons.check_circle_outline,
+                  size: 14, color: Color(0xFF4CAF50)),
+          ],
+        ),
+        const SizedBox(height: 8),
+
+        if (signatureUrl == null)
+          GestureDetector(
+            onTap: onTap,
+            child: Container(
+              width:  double.infinity,
+              height: 56,
+              decoration: BoxDecoration(
+                color:        AppColors.inputFill,
+                borderRadius: BorderRadius.circular(10),
+                border:       Border.all(color: const Color(0xFF333333)),
+              ),
+              child: Row(
+                mainAxisAlignment: MainAxisAlignment.center,
+                children: [
+                  const Icon(Icons.draw_outlined,
+                      size: 18, color: AppColors.textMuted),
+                  const SizedBox(width: 10),
+                  Text('Appuyez pour signer',
+                      style: AppTextStyles.label.copyWith(fontSize: 13)),
+                ],
+              ),
+            ),
+          )
+        else
+          Stack(
+            children: [
+              Container(
+                height: 100, width: double.infinity,
+                decoration: BoxDecoration(
+                  color:        AppColors.inputFill,
+                  borderRadius: BorderRadius.circular(10),
+                  border: Border.all(
+                      color: const Color(0xFF4CAF50), width: 1.5),
+                ),
+                child: ClipRRect(
+                  borderRadius: BorderRadius.circular(10),
+                  child: Image.file(File(signatureUrl!), fit: BoxFit.contain),
+                ),
+              ),
+              Positioned(
+                top: 4, right: 4,
+                child: GestureDetector(
+                  onTap: onRemove,
+                  child: Container(
+                    padding: const EdgeInsets.all(4),
+                    decoration: const BoxDecoration(
+                        color: Colors.black54, shape: BoxShape.circle),
+                    child: const Icon(Icons.close,
+                        color: Colors.white, size: 14),
+                  ),
+                ),
+              ),
+              Positioned(
+                bottom: 4, left: 4,
+                child: GestureDetector(
+                  onTap: onTap,
+                  child: Container(
+                    padding: const EdgeInsets.symmetric(
+                        horizontal: 8, vertical: 4),
+                    decoration: BoxDecoration(
+                      color:        Colors.black54,
+                      borderRadius: BorderRadius.circular(4),
+                    ),
+                    child: const Text('Modifier',
+                        style: TextStyle(color: Colors.white, fontSize: 11)),
+                  ),
+                ),
+              ),
+            ],
+          ),
+      ],
+    );
   }
 }
