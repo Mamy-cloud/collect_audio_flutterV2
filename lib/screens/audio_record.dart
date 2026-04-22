@@ -1,7 +1,6 @@
 // audio_record.dart — VERSION ANDROID/iOS
 // flutter_sound pour l'enregistrement
-// Kotlin platform channel pour le choix du micro
-// Ondes sonores animées style magnétophone
+// Waveform qui s'accumule de gauche à droite
 
 import 'dart:async';
 import 'dart:io';
@@ -22,8 +21,7 @@ class AudioRecordSheet extends StatefulWidget {
   State<AudioRecordSheet> createState() => _AudioRecordSheetState();
 }
 
-class _AudioRecordSheetState extends State<AudioRecordSheet>
-    with TickerProviderStateMixin {
+class _AudioRecordSheetState extends State<AudioRecordSheet> {
   _Status               _status       = _Status.idle;
   Duration              _elapsed      = Duration.zero;
   Timer?                _timer;
@@ -31,10 +29,9 @@ class _AudioRecordSheetState extends State<AudioRecordSheet>
   final FlutterSoundRecorder _recorder = FlutterSoundRecorder();
   bool                  _recorderOpen = false;
 
-  // ── Ondes sonores ──────────────────────────────────────────────────────────
-  late AnimationController _waveController;
-  final List<double>       _waveBars = List.filled(28, 0.15);
-  Timer?                   _waveTimer;
+  // ── Waveform accumulé ──────────────────────────────────────────────────────
+  final List<double> _waveData  = [];   // barres enregistrées
+  Timer?             _waveTimer;
   final _random = Random();
 
   // ── Appareils audio ────────────────────────────────────────────────────────
@@ -45,46 +42,22 @@ class _AudioRecordSheetState extends State<AudioRecordSheet>
   @override
   void initState() {
     super.initState();
-    _waveController = AnimationController(
-      vsync: this,
-      duration: const Duration(milliseconds: 600),
-    );
     _loadDevices();
   }
 
-  void _startWaveAnimation() {
-    _waveTimer = Timer.periodic(const Duration(milliseconds: 80), (_) {
+  void _startWaveAccumulation() {
+    _waveTimer = Timer.periodic(const Duration(milliseconds: 100), (_) {
       if (!mounted) return;
       setState(() {
-        for (int i = 0; i < _waveBars.length; i++) {
-          _waveBars[i] = 0.1 + _random.nextDouble() * 0.9;
-        }
+        // Amplitude aléatoire simulée — sera remplacé par amplitude réelle
+        final amp = 0.15 + _random.nextDouble() * 0.85;
+        _waveData.add(amp);
       });
     });
   }
 
-  void _stopWaveAnimation() {
+  void _stopWaveAccumulation() {
     _waveTimer?.cancel();
-    if (mounted) {
-      setState(() {
-        for (int i = 0; i < _waveBars.length; i++) {
-          _waveBars[i] = 0.15;
-        }
-      });
-    }
-  }
-
-  void _pauseWaveAnimation() {
-    _waveTimer?.cancel();
-    if (mounted) {
-      setState(() {
-        for (int i = 0; i < _waveBars.length; i++) {
-          final center = _waveBars.length / 2;
-          final dist   = (i - center).abs() / center;
-          _waveBars[i] = 0.15 + (1 - dist) * 0.3;
-        }
-      });
-    }
   }
 
   Future<void> _loadDevices() async {
@@ -116,6 +89,7 @@ class _AudioRecordSheetState extends State<AudioRecordSheet>
   Future<void> _startRecording() async {
     await _openRecorder();
     _elapsed   = Duration.zero;
+    _waveData.clear();
     _finalPath = await _newPath();
 
     await _recorder.startRecorder(
@@ -126,14 +100,14 @@ class _AudioRecordSheetState extends State<AudioRecordSheet>
     _timer = Timer.periodic(const Duration(seconds: 1), (_) {
       setState(() => _elapsed += const Duration(seconds: 1));
     });
-    _startWaveAnimation();
+    _startWaveAccumulation();
     setState(() => _status = _Status.recording);
   }
 
   Future<void> _pauseRecording() async {
     _timer?.cancel();
+    _stopWaveAccumulation();
     await _recorder.pauseRecorder();
-    _pauseWaveAnimation();
     setState(() => _status = _Status.paused);
   }
 
@@ -142,14 +116,14 @@ class _AudioRecordSheetState extends State<AudioRecordSheet>
     _timer = Timer.periodic(const Duration(seconds: 1), (_) {
       setState(() => _elapsed += const Duration(seconds: 1));
     });
-    _startWaveAnimation();
+    _startWaveAccumulation();
     setState(() => _status = _Status.recording);
   }
 
   Future<void> _stopRecording() async {
     _timer?.cancel();
+    _stopWaveAccumulation();
     await _recorder.stopRecorder();
-    _stopWaveAnimation();
     setState(() => _status = _Status.done);
   }
 
@@ -162,7 +136,7 @@ class _AudioRecordSheetState extends State<AudioRecordSheet>
 
   void _reset() {
     _timer?.cancel();
-    _stopWaveAnimation();
+    _stopWaveAccumulation();
     if (_finalPath != null) {
       try { File(_finalPath!).deleteSync(); } catch (_) {}
     }
@@ -170,6 +144,7 @@ class _AudioRecordSheetState extends State<AudioRecordSheet>
       _status    = _Status.idle;
       _elapsed   = Duration.zero;
       _finalPath = null;
+      _waveData.clear();
     });
   }
 
@@ -185,7 +160,6 @@ class _AudioRecordSheetState extends State<AudioRecordSheet>
   void dispose() {
     _timer?.cancel();
     _waveTimer?.cancel();
-    _waveController.dispose();
     if (_recorderOpen) _recorder.closeRecorder();
     super.dispose();
   }
@@ -273,11 +247,9 @@ class _AudioRecordSheetState extends State<AudioRecordSheet>
 
   Widget _buildMagnetophone() {
     final isRecording = _status == _Status.recording;
-    final isPaused    = _status == _Status.paused;
-    final isDone      = _status == _Status.done;
 
     return Container(
-      padding: const EdgeInsets.fromLTRB(20, 24, 20, 20),
+      padding: const EdgeInsets.fromLTRB(16, 20, 16, 16),
       decoration: BoxDecoration(
         color:        AppColors.inputFill,
         borderRadius: BorderRadius.circular(16),
@@ -285,32 +257,18 @@ class _AudioRecordSheetState extends State<AudioRecordSheet>
       ),
       child: Column(
         children: [
-          // ── Ondes sonores ────────────────────────────────────────────────
+          // ── Waveform accumulé ────────────────────────────────────────────
           SizedBox(
-            height: 56,
-            child: Row(
-              mainAxisAlignment: MainAxisAlignment.center,
-              crossAxisAlignment: CrossAxisAlignment.center,
-              children: List.generate(_waveBars.length, (i) {
-                final barColor = isRecording
-                    ? const Color(0xFFE53935)
-                    : isPaused
-                        ? const Color(0xFFE53935).withOpacity(0.4)
-                        : isDone
-                            ? AppColors.textMuted.withOpacity(0.6)
-                            : AppColors.textMuted.withOpacity(0.3);
-
-                return AnimatedContainer(
-                  duration: const Duration(milliseconds: 80),
-                  width:  3,
-                  height: 56 * _waveBars[i],
-                  margin: const EdgeInsets.symmetric(horizontal: 1.5),
-                  decoration: BoxDecoration(
-                    color:        barColor,
-                    borderRadius: BorderRadius.circular(2),
-                  ),
-                );
-              }),
+            height: 60,
+            child: ClipRect(
+              child: CustomPaint(
+                painter: _WaveformPainter(
+                  waveData:    _waveData,
+                  isRecording: isRecording,
+                  isPaused:    _status == _Status.paused,
+                ),
+                child: const SizedBox.expand(),
+              ),
             ),
           ),
 
@@ -336,7 +294,7 @@ class _AudioRecordSheetState extends State<AudioRecordSheet>
                   width: 8, height: 8,
                   margin: const EdgeInsets.only(right: 6),
                   decoration: const BoxDecoration(
-                    color: Color(0xFFE53935), shape: BoxShape.circle),
+                      color: Color(0xFFE53935), shape: BoxShape.circle),
                 ),
               Text(_statusLabel(_status),
                   style: TextStyle(
@@ -365,16 +323,12 @@ class _AudioRecordSheetState extends State<AudioRecordSheet>
     if (_loadingDevices) {
       return const SizedBox(
         height: 44,
-        child: Center(
-          child: SizedBox(
+        child: Center(child: SizedBox(
             width: 16, height: 16,
             child: CircularProgressIndicator(
-                strokeWidth: 2, color: AppColors.textMuted),
-          ),
-        ),
+                strokeWidth: 2, color: AppColors.textMuted))),
       );
     }
-
     if (_devices.length <= 1) return const SizedBox.shrink();
 
     return Container(
@@ -399,23 +353,17 @@ class _AudioRecordSheetState extends State<AudioRecordSheet>
                 isExpanded: true,
                 items: _devices.map((d) => DropdownMenuItem<AudioDevice>(
                   value: d,
-                  child: Row(
-                    children: [
-                      Icon(
-                        d.isUsb
-                            ? Icons.usb_outlined
-                            : d.isBluetooth
-                                ? Icons.bluetooth_outlined
-                                : Icons.mic_outlined,
-                        size:  14,
-                        color: AppColors.textMuted,
-                      ),
-                      const SizedBox(width: 8),
-                      Expanded(
-                        child: Text(d.name, overflow: TextOverflow.ellipsis),
-                      ),
-                    ],
-                  ),
+                  child: Row(children: [
+                    Icon(
+                      d.isUsb ? Icons.usb_outlined
+                          : d.isBluetooth ? Icons.bluetooth_outlined
+                          : Icons.mic_outlined,
+                      size: 14, color: AppColors.textMuted,
+                    ),
+                    const SizedBox(width: 8),
+                    Expanded(child: Text(d.name,
+                        overflow: TextOverflow.ellipsis)),
+                  ]),
                 )).toList(),
                 onChanged: _status == _Status.idle
                     ? (d) => setState(() => _selectedDevice = d)
@@ -427,6 +375,184 @@ class _AudioRecordSheetState extends State<AudioRecordSheet>
       ),
     );
   }
+}
+
+// ── Waveform Painter ───────────────────────────────────────────────────────────
+
+class _WaveformPainter extends CustomPainter {
+  final List<double> waveData;
+  final bool         isRecording;
+  final bool         isPaused;
+
+  const _WaveformPainter({
+    required this.waveData,
+    required this.isRecording,
+    required this.isPaused,
+  });
+
+  @override
+  void paint(Canvas canvas, Size size) {
+    if (waveData.isEmpty) {
+      // Ligne centrale vide
+      final paint = Paint()
+        ..color  = const Color(0xFF444444)
+        ..strokeWidth = 1;
+      canvas.drawLine(
+        Offset(0, size.height / 2),
+        Offset(size.width, size.height / 2),
+        paint,
+      );
+      return;
+    }
+
+    const barWidth  = 2.5;
+    const barGap    = 1.5;
+    const barStep   = barWidth + barGap;
+    final maxBars   = (size.width / barStep).floor();
+    final centerY   = size.height / 2;
+
+    // Prendre les N dernières barres qui rentrent dans la zone
+    final visible = waveData.length > maxBars
+        ? waveData.sublist(waveData.length - maxBars)
+        : waveData;
+
+    for (int i = 0; i < visible.length; i++) {
+      final x         = i * barStep + barWidth / 2;
+      final amplitude = visible[i];
+      final barH      = max(2.0, amplitude * size.height * 0.9);
+
+      // Couleur : barre active (dernière) plus vive
+      final isLast    = i == visible.length - 1 && isRecording;
+      final color     = isRecording
+          ? (isLast
+              ? const Color(0xFFFF5252)
+              : const Color(0xFFE53935).withOpacity(0.7 + 0.3 * amplitude))
+          : isPaused
+              ? const Color(0xFFE53935).withOpacity(0.4)
+              : const Color(0xFF666666);
+
+      final paint = Paint()
+        ..color       = color
+        ..strokeWidth = barWidth
+        ..strokeCap   = StrokeCap.round;
+
+      canvas.drawLine(
+        Offset(x, centerY - barH / 2),
+        Offset(x, centerY + barH / 2),
+        paint,
+      );
+    }
+
+    // Ligne de progression (curseur rouge à droite)
+    if (isRecording && visible.isNotEmpty) {
+      final cursorX = visible.length * barStep;
+      final cursorPaint = Paint()
+        ..color       = const Color(0xFFE53935)
+        ..strokeWidth = 1.5;
+      canvas.drawLine(
+        Offset(cursorX, 0),
+        Offset(cursorX, size.height),
+        cursorPaint,
+      );
+    }
+  }
+
+  @override
+  bool shouldRepaint(_WaveformPainter old) =>
+      old.waveData.length != waveData.length ||
+      old.isRecording != isRecording ||
+      old.isPaused != isPaused;
+}
+
+// ── Waveform statique pour la lecture (save_local) ────────────────────────────
+
+class WaveformDisplay extends StatelessWidget {
+  final List<double> waveData;
+  final double       progress;    // 0.0 → 1.0
+  final bool         isPlaying;
+
+  const WaveformDisplay({
+    super.key,
+    required this.waveData,
+    required this.progress,
+    required this.isPlaying,
+  });
+
+  @override
+  Widget build(BuildContext context) {
+    return SizedBox(
+      height: 40,
+      child: CustomPaint(
+        painter: _WaveformPlaybackPainter(
+          waveData:  waveData,
+          progress:  progress,
+          isPlaying: isPlaying,
+        ),
+        child: const SizedBox.expand(),
+      ),
+    );
+  }
+}
+
+class _WaveformPlaybackPainter extends CustomPainter {
+  final List<double> waveData;
+  final double       progress;
+  final bool         isPlaying;
+
+  const _WaveformPlaybackPainter({
+    required this.waveData,
+    required this.progress,
+    required this.isPlaying,
+  });
+
+  @override
+  void paint(Canvas canvas, Size size) {
+    const barWidth = 2.0;
+    const barGap   = 1.0;
+    const barStep  = barWidth + barGap;
+    final maxBars  = (size.width / barStep).floor();
+    final centerY  = size.height / 2;
+
+    // Données par défaut si vides
+    final data = waveData.isNotEmpty
+        ? waveData
+        : List.generate(maxBars, (i) {
+            final x = i / maxBars;
+            return 0.3 + 0.5 * sin(x * pi * 6) * sin(x * pi);
+          });
+
+    final visible = data.length > maxBars
+        ? data.sublist(0, maxBars)
+        : data;
+
+    final progressX = size.width * progress;
+
+    for (int i = 0; i < visible.length; i++) {
+      final x    = i * barStep + barWidth / 2;
+      final barH = max(2.0, visible[i] * size.height * 0.9);
+      final done = x <= progressX;
+
+      final color = done
+          ? const Color(0xFFE53935)
+          : const Color(0xFF444444);
+
+      final paint = Paint()
+        ..color       = color
+        ..strokeWidth = barWidth
+        ..strokeCap   = StrokeCap.round;
+
+      canvas.drawLine(
+        Offset(x, centerY - barH / 2),
+        Offset(x, centerY + barH / 2),
+        paint,
+      );
+    }
+  }
+
+  @override
+  bool shouldRepaint(_WaveformPlaybackPainter old) =>
+      old.progress != progress || old.isPlaying != isPlaying ||
+      old.waveData.length != waveData.length;
 }
 
 class _CtrlButton extends StatelessWidget {

@@ -3,6 +3,7 @@ import 'dart:io';
 import 'package:flutter/material.dart';
 import 'package:go_router/go_router.dart';
 import 'package:audioplayers/audioplayers.dart';
+import '../../screens/audio_record.dart' show WaveformDisplay;
 import '../global/app_styles.dart';
 import '../../database/update_delete/modify_info_temoin.dart';
 import '../../database/update_delete/delete_collect_questionnaire.dart';
@@ -734,13 +735,30 @@ class _AudioPlayer extends StatelessWidget {
     return Column(
       crossAxisAlignment: CrossAxisAlignment.start,
       children: [
+        // ── Waveform de lecture ────────────────────────────────────────────
+        GestureDetector(
+          onTapDown: (d) {
+            final box = context.findRenderObject() as RenderBox?;
+            if (box == null) return;
+            final frac = d.localPosition.dx / box.size.width;
+            onSeek(frac.clamp(0.0, 1.0));
+          },
+          child: WaveformDisplay(
+            waveData:  const [],   // forme d'onde synthétique
+            progress:  progress,
+            isPlaying: isPlaying,
+          ),
+        ),
+
+        const SizedBox(height: 8),
+
+        // ── Contrôles ─────────────────────────────────────────────────────
         Row(
           children: [
-            // ── Bouton play/pause ────────────────────────────────────────
             GestureDetector(
               onTap: onToggle,
               child: Container(
-                width: 36, height: 36,
+                width: 34, height: 34,
                 decoration: BoxDecoration(
                   shape: BoxShape.circle,
                   color: isPlaying
@@ -754,7 +772,7 @@ class _AudioPlayer extends StatelessWidget {
                 ),
                 child: Icon(
                   isPlaying ? Icons.pause : Icons.play_arrow,
-                  size:  18,
+                  size:  17,
                   color: isPlaying
                       ? const Color(0xFFE53935)
                       : AppColors.textMuted,
@@ -762,47 +780,12 @@ class _AudioPlayer extends StatelessWidget {
               ),
             ),
             const SizedBox(width: 10),
-
-            // ── Barre de progression ─────────────────────────────────────
-            Expanded(
-              child: Column(
-                crossAxisAlignment: CrossAxisAlignment.start,
-                children: [
-                  SliderTheme(
-                    data: SliderTheme.of(context).copyWith(
-                      trackHeight:          2,
-                      thumbShape: const RoundSliderThumbShape(
-                          enabledThumbRadius: 5),
-                      overlayShape: const RoundSliderOverlayShape(
-                          overlayRadius: 10),
-                      activeTrackColor:   const Color(0xFFE53935),
-                      inactiveTrackColor: const Color(0xFF333333),
-                      thumbColor:         const Color(0xFFE53935),
-                      overlayColor:       const Color(0x22E53935),
-                    ),
-                    child: Slider(
-                      value:    progress.clamp(0.0, 1.0),
-                      onChanged: onSeek,
-                    ),
-                  ),
-                  Padding(
-                    padding: const EdgeInsets.symmetric(horizontal: 4),
-                    child: Row(
-                      mainAxisAlignment: MainAxisAlignment.spaceBetween,
-                      children: [
-                        Text(fmtDuration(position),
-                            style: AppTextStyles.label
-                                .copyWith(fontSize: 10)),
-                        if (duree.isNotEmpty)
-                          Text(duree,
-                              style: AppTextStyles.label
-                                  .copyWith(fontSize: 10)),
-                      ],
-                    ),
-                  ),
-                ],
-              ),
-            ),
+            Text(fmtDuration(position),
+                style: AppTextStyles.label.copyWith(fontSize: 11)),
+            const Spacer(),
+            if (duree.isNotEmpty)
+              Text(duree,
+                  style: AppTextStyles.label.copyWith(fontSize: 11)),
           ],
         ),
       ],
