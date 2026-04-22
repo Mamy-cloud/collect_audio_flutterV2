@@ -14,12 +14,11 @@ class SaveLocalDetailScreen extends StatefulWidget {
 
 class _SaveLocalDetailScreenState extends State<SaveLocalDetailScreen> {
   late Map<String, dynamic>  _temoin;
-  List<Map<String, dynamic>> _collectes  = [];
-  bool                       _isLoading  = true;
+  List<Map<String, dynamic>> _collectes = [];
+  bool                       _isLoading = true;
 
-  // ── Scroll + GlobalKeys pour navigation par numéro ────────────────────────
-  final ScrollController          _scrollCtrl = ScrollController();
-  List<GlobalKey> _keys = [];
+  final ScrollController _scrollCtrl = ScrollController();
+  List<GlobalKey>        _keys       = [];
 
   @override
   void initState() {
@@ -58,12 +57,9 @@ class _SaveLocalDetailScreenState extends State<SaveLocalDetailScreen> {
       }
     }
 
-    // Générer une clé par collecte
-    final keys = List.generate(collectes.length, (_) => GlobalKey());
-
     setState(() {
       _collectes = collectes;
-      _keys      = keys;
+      _keys      = List.generate(collectes.length, (_) => GlobalKey());
       _isLoading = false;
     });
   }
@@ -73,15 +69,17 @@ class _SaveLocalDetailScreenState extends State<SaveLocalDetailScreen> {
     if (ctx != null) {
       Scrollable.ensureVisible(
         ctx,
-        duration: const Duration(milliseconds: 350),
-        curve:    Curves.easeInOut,
-        alignment: 0.1,
+        duration:  const Duration(milliseconds: 350),
+        curve:     Curves.easeInOut,
+        alignment: 0.05,
       );
     }
   }
 
   @override
   Widget build(BuildContext context) {
+    final hasIndex = _collectes.length > 1;
+
     return Scaffold(
       backgroundColor: AppColors.background,
       appBar: AppBar(
@@ -100,114 +98,43 @@ class _SaveLocalDetailScreenState extends State<SaveLocalDetailScreen> {
       body: _isLoading
           ? const Center(
               child: CircularProgressIndicator(color: Colors.white))
-          : Stack(
+          : Row(
               children: [
                 // ── Contenu principal ──────────────────────────────────────
-                SingleChildScrollView(
-                  controller: _scrollCtrl,
-                  padding: const EdgeInsets.fromLTRB(16, 8, 40, 40),
-                  child: Column(
-                    crossAxisAlignment: CrossAxisAlignment.start,
-                    children: [
+                Expanded(
+                  child: SingleChildScrollView(
+                    controller: _scrollCtrl,
+                    padding: const EdgeInsets.fromLTRB(16, 8, 16, 40),
+                    child: Column(
+                      crossAxisAlignment: CrossAxisAlignment.start,
+                      children: [
 
-                      // ── Carte info témoin ──────────────────────────────
-                      InfoPersoCard(temoin: _temoin),
+                        InfoPersoCard(temoin: _temoin),
 
-                      // ── En-tête enregistrements ────────────────────────
-                      if (_collectes.isNotEmpty) ...[
-                        const SizedBox(height: 20),
-                        Row(
-                          children: [
-                            const Text(
-                              'Enregistrements',
-                              style: TextStyle(
-                                fontSize:   15,
-                                fontWeight: FontWeight.w700,
-                                color:      Color(0xFFE53935),
-                                letterSpacing: 0.3,
-                              ),
-                            ),
-                            const SizedBox(width: 8),
-                            Container(
-                              padding: const EdgeInsets.symmetric(
-                                  horizontal: 8, vertical: 2),
-                              decoration: BoxDecoration(
-                                color:        const Color(0xFFE53935)
-                                    .withValues(alpha: 0.15),
-                                borderRadius: BorderRadius.circular(10),
-                              ),
-                              child: Text(
-                                '${_collectes.length}',
-                                style: const TextStyle(
-                                  fontSize:   11,
-                                  fontWeight: FontWeight.w700,
-                                  color:      Color(0xFFE53935),
-                                ),
-                              ),
-                            ),
-                          ],
-                        ),
-                        const SizedBox(height: 10),
-                      ],
-
-                      // ── Liste des collectes ────────────────────────────
-                      if (_collectes.isEmpty)
-                        const CollecteEmptyState()
-                      else
-                        ...List.generate(_collectes.length, (i) {
-                          return Column(
-                            key:                 _keys[i],
-                            crossAxisAlignment:  CrossAxisAlignment.start,
+                        if (_collectes.isNotEmpty) ...[
+                          const SizedBox(height: 16),
+                          Row(
                             children: [
-                              // Titre rouge "Enregistrement N"
-                              Padding(
-                                padding: const EdgeInsets.only(
-                                    top: 4, bottom: 6),
-                                child: Text(
-                                  'Enregistrement ${i + 1}',
-                                  style: const TextStyle(
-                                    fontSize:   13,
-                                    fontWeight: FontWeight.w700,
-                                    color:      Color(0xFFE53935),
-                                    letterSpacing: 0.2,
-                                  ),
+                              const Text(
+                                'Enregistrements',
+                                style: TextStyle(
+                                  fontSize:      15,
+                                  fontWeight:    FontWeight.w700,
+                                  color:         Color(0xFFE53935),
+                                  letterSpacing: 0.3,
                                 ),
                               ),
-                              CollecteCard(collecte: _collectes[i]),
-                              if (i < _collectes.length - 1)
-                                const SizedBox(height: 4),
-                            ],
-                          );
-                        }),
-                    ],
-                  ),
-                ),
-
-                // ── Index numérique à droite ───────────────────────────────
-                if (_collectes.length > 1)
-                  Positioned(
-                    right:  4,
-                    top:    0,
-                    bottom: 0,
-                    child: Center(
-                      child: Column(
-                        mainAxisSize: MainAxisSize.min,
-                        children: List.generate(_collectes.length, (i) {
-                          return GestureDetector(
-                            onTap: () => _scrollToIndex(i),
-                            child: Container(
-                              width:  26,
-                              height: 26,
-                              margin: const EdgeInsets.symmetric(vertical: 2),
-                              decoration: BoxDecoration(
-                                color:        AppColors.surface,
-                                borderRadius: BorderRadius.circular(6),
-                                border: Border.all(
-                                    color: const Color(0xFF333333)),
-                              ),
-                              child: Center(
+                              const SizedBox(width: 8),
+                              Container(
+                                padding: const EdgeInsets.symmetric(
+                                    horizontal: 8, vertical: 2),
+                                decoration: BoxDecoration(
+                                  color: const Color(0xFFE53935)
+                                      .withValues(alpha: 0.15),
+                                  borderRadius: BorderRadius.circular(10),
+                                ),
                                 child: Text(
-                                  '${i + 1}',
+                                  '${_collectes.length}',
                                   style: const TextStyle(
                                     fontSize:   11,
                                     fontWeight: FontWeight.w700,
@@ -215,10 +142,64 @@ class _SaveLocalDetailScreenState extends State<SaveLocalDetailScreen> {
                                   ),
                                 ),
                               ),
+                            ],
+                          ),
+                          const SizedBox(height: 8),
+                        ],
+
+                        if (_collectes.isEmpty)
+                          const CollecteEmptyState()
+                        else
+                          ...List.generate(_collectes.length, (i) {
+                            return Padding(
+                              key:     _keys[i],
+                              padding: EdgeInsets.only(
+                                  bottom: i < _collectes.length - 1 ? 8 : 0),
+                              child: CollecteCard(
+                                collecte: _collectes[i],
+                                numero:   i + 1,
+                              ),
+                            );
+                          }),
+                      ],
+                    ),
+                  ),
+                ),
+
+                // ── Index numérique à droite ───────────────────────────────
+                if (hasIndex)
+                  Container(
+                    width:   34,
+                    color:   AppColors.background,
+                    padding: const EdgeInsets.symmetric(vertical: 12),
+                    child: Column(
+                      mainAxisAlignment: MainAxisAlignment.center,
+                      children: List.generate(_collectes.length, (i) {
+                        return GestureDetector(
+                          onTap: () => _scrollToIndex(i),
+                          child: Container(
+                            width:  26,
+                            height: 26,
+                            margin: const EdgeInsets.symmetric(vertical: 2),
+                            decoration: BoxDecoration(
+                              color:        AppColors.surface,
+                              borderRadius: BorderRadius.circular(6),
+                              border: Border.all(
+                                  color: const Color(0xFF333333)),
                             ),
-                          );
-                        }),
-                      ),
+                            child: Center(
+                              child: Text(
+                                '${i + 1}',
+                                style: const TextStyle(
+                                  fontSize:   11,
+                                  fontWeight: FontWeight.w700,
+                                  color:      Color(0xFFE53935),
+                                ),
+                              ),
+                            ),
+                          ),
+                        );
+                      }),
                     ),
                   ),
               ],

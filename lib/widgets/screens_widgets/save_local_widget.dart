@@ -436,7 +436,8 @@ class CollecteEmptyState extends StatelessWidget {
 
 class CollecteCard extends StatefulWidget {
   final Map<String, dynamic> collecte;
-  const CollecteCard({super.key, required this.collecte});
+  final int? numero;
+  const CollecteCard({super.key, required this.collecte, this.numero});
 
   @override
   State<CollecteCard> createState() => _CollecteCardState();
@@ -600,18 +601,35 @@ class _CollecteCardState extends State<CollecteCard> {
         child: Column(
           crossAxisAlignment: CrossAxisAlignment.start,
           children: [
-            Align(
-              alignment: Alignment.topRight,
-              child: TextButton(
-                onPressed: () => _showOptions(context),
-                style: TextButton.styleFrom(
-                  foregroundColor: AppColors.textMuted,
-                  padding: const EdgeInsets.symmetric(
-                      horizontal: 14, vertical: 10),
-                ),
-                child: const Text('Options',
-                    style: TextStyle(
-                        fontSize: 12, color: AppColors.textMuted)),
+            Padding(
+              padding: const EdgeInsets.fromLTRB(16, 12, 16, 0),
+              child: Row(
+                mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                children: [
+                  if (widget.numero != null)
+                    Text(
+                      'Enregistrement ${widget.numero}',
+                      style: const TextStyle(
+                        fontSize:   13,
+                        fontWeight: FontWeight.w700,
+                        color:      Color(0xFFE53935),
+                        letterSpacing: 0.2,
+                      ),
+                    )
+                  else
+                    const SizedBox.shrink(),
+                  TextButton(
+                    onPressed: () => _showOptions(context),
+                    style: TextButton.styleFrom(
+                      foregroundColor: AppColors.textMuted,
+                      padding: const EdgeInsets.symmetric(
+                          horizontal: 8, vertical: 4),
+                    ),
+                    child: const Text('Options',
+                        style: TextStyle(
+                            fontSize: 12, color: AppColors.textMuted)),
+                  ),
+                ],
               ),
             ),
             Padding(
