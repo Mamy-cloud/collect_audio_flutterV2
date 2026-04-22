@@ -78,7 +78,7 @@ class _SaveLocalDetailScreenState extends State<SaveLocalDetailScreen> {
 
   @override
   Widget build(BuildContext context) {
-    final hasIndex = _collectes.length > 1;
+    final hasIndex = _collectes.isNotEmpty;
 
     return Scaffold(
       backgroundColor: AppColors.background,
@@ -116,7 +116,7 @@ class _SaveLocalDetailScreenState extends State<SaveLocalDetailScreen> {
                           Row(
                             children: [
                               const Text(
-                                'Enregistrements',
+                                'Témoignages enregistrés',
                                 style: TextStyle(
                                   fontSize:      15,
                                   fontWeight:    FontWeight.w700,
