@@ -24,11 +24,10 @@ jobs:
           distribution: temurin
           java-version: '17'
 
-      - name: Install Flutter
-        run: |
-          git clone https://github.com/flutter/flutter.git \
-            --depth 1 --branch 3.27.4 $HOME/flutter
-          echo "$HOME/flutter/bin" >> $GITHUB_PATH
+      - name: Setup Flutter
+        uses: subosito/flutter-action@v2
+        with:
+          flutter-version: '3.27.4'
 
       - name: Install Android NDK
         run: |
@@ -39,16 +38,13 @@ jobs:
         run: flutter pub get
 
       - name: Remove GeneratedPluginRegistrant
-        run: |
-          find . -name "GeneratedPluginRegistrant.java" -delete
+        run: find . -name "GeneratedPluginRegistrant.java" -delete
 
       - name: Flutter analyze
         run: flutter analyze lib/ --no-fatal-infos
 
       - name: Build APK
-        run: |
-          flutter build apk --release \
-            --split-per-abi
+        run: flutter build apk --release --split-per-abi
 
       - name: Upload APK
         uses: actions/upload-artifact@v4
