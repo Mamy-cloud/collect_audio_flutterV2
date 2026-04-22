@@ -37,6 +37,13 @@ jobs:
       - name: Flutter pub get
         run: flutter pub get
 
+      - name: Patch Flutter v1 check
+        run: |
+          sed -i 's/throwToolExit.*deleted Android v1 embedding.*/\/\/ patched/' \
+            $HOME/flutter/packages/flutter_tools/lib/src/project.dart || true
+          sed -i 's/throwToolExit.*deleted Android v1 embedding.*/\/\/ patched/' \
+            $HOME/hostedtoolcache/flutter/3.27.4-stable/x64/packages/flutter_tools/lib/src/project.dart || true
+
       - name: Remove GeneratedPluginRegistrant
         run: find . -name "GeneratedPluginRegistrant.java" -delete
 
