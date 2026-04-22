@@ -2,6 +2,7 @@ import 'dart:convert';
 import 'dart:io';
 import 'package:flutter/material.dart';
 import 'package:go_router/go_router.dart';
+import 'package:audioplayers/audioplayers.dart';
 import '../global/app_styles.dart';
 import '../../database/update_delete/modify_info_temoin.dart';
 import '../../database/update_delete/delete_collect_questionnaire.dart';
@@ -432,9 +433,61 @@ class CollecteEmptyState extends StatelessWidget {
 
 // ── CollecteCard ───────────────────────────────────────────────────────────────
 
-class CollecteCard extends StatelessWidget {
+class CollecteCard extends StatefulWidget {
   final Map<String, dynamic> collecte;
   const CollecteCard({super.key, required this.collecte});
+
+  @override
+  State<CollecteCard> createState() => _CollecteCardState();
+}
+
+class _CollecteCardState extends State<CollecteCard> {
+  final AudioPlayer _player    = AudioPlayer();
+  PlayerState       _playerState = PlayerState.stopped;
+  Duration          _position  = Duration.zero;
+  Duration          _duration  = Duration.zero;
+
+  @override
+  void initState() {
+    super.initState();
+    _player.onPlayerStateChanged.listen((s) {
+      if (mounted) setState(() => _playerState = s);
+    });
+    _player.onPositionChanged.listen((p) {
+      if (mounted) setState(() => _position = p);
+    });
+    _player.onDurationChanged.listen((d) {
+      if (mounted) setState(() => _duration = d);
+    });
+    _player.onPlayerComplete.listen((_) {
+      if (mounted) setState(() {
+        _playerState = PlayerState.stopped;
+        _position    = Duration.zero;
+      });
+    });
+  }
+
+  @override
+  void dispose() {
+    _player.dispose();
+    super.dispose();
+  }
+
+  Future<void> _togglePlay(String audioPath) async {
+    if (_playerState == PlayerState.playing) {
+      await _player.pause();
+    } else if (_playerState == PlayerState.paused) {
+      await _player.resume();
+    } else {
+      await _player.play(DeviceFileSource(audioPath));
+    }
+  }
+
+  String _fmtDuration(Duration d) {
+    final m = d.inMinutes.remainder(60).toString().padLeft(2, '0');
+    final s = d.inSeconds.remainder(60).toString().padLeft(2, '0');
+    return '$m:$s';
+  }
 
   String _val(List<dynamic> q, String champ) {
     try {
@@ -446,7 +499,7 @@ class CollecteCard extends StatelessWidget {
   }
 
   void _showOptions(BuildContext context) {
-    final String collectId = collecte['id'] as String;
+    final String collectId = widget.collecte['id'] as String;
     showModalBottomSheet(
       context: context,
       backgroundColor: AppColors.surface,
@@ -517,16 +570,17 @@ class CollecteCard extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    final q       = collecte['questionnaire'] as List<dynamic>? ?? [];
-    final lieu    = _val(q, 'lieu');
-    final period  = _val(q, 'periode_evoquee');
-    final themes  = _val(q, 'themes');
-    final sujet   = _val(q, 'sujet_du_jour');
-    final accomp  = _val(q, 'accompagnant');
-    final contact = _val(q, 'contact');
-    final date    = (collecte['created_at'] as String? ?? '').split('T').first;
-    final audio = collecte['url_audio'] as String?;
-    final duree = _formatDuree(collecte['duree_audio']);
+    final collecte = widget.collecte;
+    final q        = collecte['questionnaire'] as List<dynamic>? ?? [];
+    final lieu     = _val(q, 'lieu');
+    final period   = _val(q, 'periode_evoquee');
+    final themes   = _val(q, 'themes');
+    final sujet    = _val(q, 'sujet_du_jour');
+    final accomp   = _val(q, 'accompagnant');
+    final contact  = _val(q, 'contact');
+    final date     = (collecte['created_at'] as String? ?? '').split('T').first;
+    final audio    = collecte['url_audio'] as String?;
+    final duree    = _formatDuree(collecte['duree_audio']);
 
     return GestureDetector(
       onTap: () => showModalBottomSheet(
@@ -621,28 +675,17 @@ class CollecteCard extends StatelessWidget {
                   if (audio != null) ...[
                     const SizedBox(height: 12),
                     const Divider(height: 1, color: Color(0xFF2A2A2A)),
-                    const SizedBox(height: 10),
-                    Row(
-                      children: [
-                        const Icon(Icons.audio_file_outlined,
-                            size: 14, color: AppColors.textMuted),
-                        const SizedBox(width: 6),
-                        Expanded(
-                          child: Text(audio,
-                              style: AppTextStyles.label
-                                  .copyWith(fontSize: 11),
-                              overflow: TextOverflow.ellipsis),
-                        ),
-                        if (duree.isNotEmpty) ...[
-                          const SizedBox(width: 8),
-                          const Icon(Icons.timer_outlined,
-                              size: 13, color: AppColors.textMuted),
-                          const SizedBox(width: 4),
-                          Text(duree,
-                              style: AppTextStyles.label
-                                  .copyWith(fontSize: 11)),
-                        ],
-                      ],
+                    const SizedBox(height: 12),
+                    _AudioPlayer(
+                      audioPath:   audio,
+                      duree:       duree,
+                      playerState: _playerState,
+                      position:    _position,
+                      duration:    _duration,
+                      onToggle:    () => _togglePlay(audio),
+                      onSeek:      (v) => _player.seek(
+                          Duration(seconds: (v * _duration.inSeconds).round())),
+                      fmtDuration: _fmtDuration,
                     ),
                   ],
 
@@ -653,6 +696,116 @@ class CollecteCard extends StatelessWidget {
           ],
         ),
       ),
+    );
+  }
+}
+
+
+// ── AudioPlayer Widget ─────────────────────────────────────────────────────────
+
+class _AudioPlayer extends StatelessWidget {
+  final String        audioPath;
+  final String        duree;
+  final PlayerState   playerState;
+  final Duration      position;
+  final Duration      duration;
+  final VoidCallback  onToggle;
+  final void Function(double) onSeek;
+  final String Function(Duration) fmtDuration;
+
+  const _AudioPlayer({
+    required this.audioPath,
+    required this.duree,
+    required this.playerState,
+    required this.position,
+    required this.duration,
+    required this.onToggle,
+    required this.onSeek,
+    required this.fmtDuration,
+  });
+
+  @override
+  Widget build(BuildContext context) {
+    final isPlaying = playerState == PlayerState.playing;
+    final progress  = duration.inSeconds > 0
+        ? position.inSeconds / duration.inSeconds
+        : 0.0;
+
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        Row(
+          children: [
+            // ── Bouton play/pause ────────────────────────────────────────
+            GestureDetector(
+              onTap: onToggle,
+              child: Container(
+                width: 36, height: 36,
+                decoration: BoxDecoration(
+                  shape: BoxShape.circle,
+                  color: isPlaying
+                      ? const Color(0xFFE53935).withOpacity(0.15)
+                      : AppColors.surface,
+                  border: Border.all(
+                    color: isPlaying
+                        ? const Color(0xFFE53935)
+                        : const Color(0xFF444444),
+                  ),
+                ),
+                child: Icon(
+                  isPlaying ? Icons.pause : Icons.play_arrow,
+                  size:  18,
+                  color: isPlaying
+                      ? const Color(0xFFE53935)
+                      : AppColors.textMuted,
+                ),
+              ),
+            ),
+            const SizedBox(width: 10),
+
+            // ── Barre de progression ─────────────────────────────────────
+            Expanded(
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  SliderTheme(
+                    data: SliderTheme.of(context).copyWith(
+                      trackHeight:          2,
+                      thumbShape: const RoundSliderThumbShape(
+                          enabledThumbRadius: 5),
+                      overlayShape: const RoundSliderOverlayShape(
+                          overlayRadius: 10),
+                      activeTrackColor:   const Color(0xFFE53935),
+                      inactiveTrackColor: const Color(0xFF333333),
+                      thumbColor:         const Color(0xFFE53935),
+                      overlayColor:       const Color(0x22E53935),
+                    ),
+                    child: Slider(
+                      value:    progress.clamp(0.0, 1.0),
+                      onChanged: onSeek,
+                    ),
+                  ),
+                  Padding(
+                    padding: const EdgeInsets.symmetric(horizontal: 4),
+                    child: Row(
+                      mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                      children: [
+                        Text(fmtDuration(position),
+                            style: AppTextStyles.label
+                                .copyWith(fontSize: 10)),
+                        if (duree.isNotEmpty)
+                          Text(duree,
+                              style: AppTextStyles.label
+                                  .copyWith(fontSize: 10)),
+                      ],
+                    ),
+                  ),
+                ],
+              ),
+            ),
+          ],
+        ),
+      ],
     );
   }
 }

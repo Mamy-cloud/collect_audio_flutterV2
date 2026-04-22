@@ -1,9 +1,11 @@
 // audio_record.dart — VERSION ANDROID/iOS
 // flutter_sound pour l'enregistrement
 // Kotlin platform channel pour le choix du micro
+// Ondes sonores animées style magnétophone
 
 import 'dart:async';
 import 'dart:io';
+import 'dart:math';
 import 'package:flutter/material.dart';
 import 'package:path_provider/path_provider.dart';
 import 'package:path/path.dart' as p;
@@ -20,7 +22,8 @@ class AudioRecordSheet extends StatefulWidget {
   State<AudioRecordSheet> createState() => _AudioRecordSheetState();
 }
 
-class _AudioRecordSheetState extends State<AudioRecordSheet> {
+class _AudioRecordSheetState extends State<AudioRecordSheet>
+    with TickerProviderStateMixin {
   _Status               _status       = _Status.idle;
   Duration              _elapsed      = Duration.zero;
   Timer?                _timer;
@@ -28,15 +31,60 @@ class _AudioRecordSheetState extends State<AudioRecordSheet> {
   final FlutterSoundRecorder _recorder = FlutterSoundRecorder();
   bool                  _recorderOpen = false;
 
+  // ── Ondes sonores ──────────────────────────────────────────────────────────
+  late AnimationController _waveController;
+  final List<double>       _waveBars = List.filled(28, 0.15);
+  Timer?                   _waveTimer;
+  final _random = Random();
+
   // ── Appareils audio ────────────────────────────────────────────────────────
-  List<AudioDevice> _devices        = [];
+  List<AudioDevice> _devices       = [];
   AudioDevice?      _selectedDevice;
   bool              _loadingDevices = true;
 
   @override
   void initState() {
     super.initState();
+    _waveController = AnimationController(
+      vsync: this,
+      duration: const Duration(milliseconds: 600),
+    );
     _loadDevices();
+  }
+
+  void _startWaveAnimation() {
+    _waveTimer = Timer.periodic(const Duration(milliseconds: 80), (_) {
+      if (!mounted) return;
+      setState(() {
+        for (int i = 0; i < _waveBars.length; i++) {
+          _waveBars[i] = 0.1 + _random.nextDouble() * 0.9;
+        }
+      });
+    });
+  }
+
+  void _stopWaveAnimation() {
+    _waveTimer?.cancel();
+    if (mounted) {
+      setState(() {
+        for (int i = 0; i < _waveBars.length; i++) {
+          _waveBars[i] = 0.15;
+        }
+      });
+    }
+  }
+
+  void _pauseWaveAnimation() {
+    _waveTimer?.cancel();
+    if (mounted) {
+      setState(() {
+        for (int i = 0; i < _waveBars.length; i++) {
+          final center = _waveBars.length / 2;
+          final dist   = (i - center).abs() / center;
+          _waveBars[i] = 0.15 + (1 - dist) * 0.3;
+        }
+      });
+    }
   }
 
   Future<void> _loadDevices() async {
@@ -78,12 +126,14 @@ class _AudioRecordSheetState extends State<AudioRecordSheet> {
     _timer = Timer.periodic(const Duration(seconds: 1), (_) {
       setState(() => _elapsed += const Duration(seconds: 1));
     });
+    _startWaveAnimation();
     setState(() => _status = _Status.recording);
   }
 
   Future<void> _pauseRecording() async {
     _timer?.cancel();
     await _recorder.pauseRecorder();
+    _pauseWaveAnimation();
     setState(() => _status = _Status.paused);
   }
 
@@ -92,12 +142,14 @@ class _AudioRecordSheetState extends State<AudioRecordSheet> {
     _timer = Timer.periodic(const Duration(seconds: 1), (_) {
       setState(() => _elapsed += const Duration(seconds: 1));
     });
+    _startWaveAnimation();
     setState(() => _status = _Status.recording);
   }
 
   Future<void> _stopRecording() async {
     _timer?.cancel();
     await _recorder.stopRecorder();
+    _stopWaveAnimation();
     setState(() => _status = _Status.done);
   }
 
@@ -110,6 +162,7 @@ class _AudioRecordSheetState extends State<AudioRecordSheet> {
 
   void _reset() {
     _timer?.cancel();
+    _stopWaveAnimation();
     if (_finalPath != null) {
       try { File(_finalPath!).deleteSync(); } catch (_) {}
     }
@@ -131,6 +184,8 @@ class _AudioRecordSheetState extends State<AudioRecordSheet> {
   @override
   void dispose() {
     _timer?.cancel();
+    _waveTimer?.cancel();
+    _waveController.dispose();
     if (_recorderOpen) _recorder.closeRecorder();
     super.dispose();
   }
@@ -162,12 +217,11 @@ class _AudioRecordSheetState extends State<AudioRecordSheet> {
 
           const SizedBox(height: 20),
 
-          // ── Sélecteur de micro ─────────────────────────────────────────
           _buildDeviceSelector(),
 
           const SizedBox(height: 20),
 
-          _Magnetophone(status: _status, elapsedLabel: _elapsedLabel),
+          _buildMagnetophone(),
 
           const SizedBox(height: 24),
 
@@ -215,6 +269,96 @@ class _AudioRecordSheetState extends State<AudioRecordSheet> {
         ],
       ),
     );
+  }
+
+  Widget _buildMagnetophone() {
+    final isRecording = _status == _Status.recording;
+    final isPaused    = _status == _Status.paused;
+    final isDone      = _status == _Status.done;
+
+    return Container(
+      padding: const EdgeInsets.fromLTRB(20, 24, 20, 20),
+      decoration: BoxDecoration(
+        color:        AppColors.inputFill,
+        borderRadius: BorderRadius.circular(16),
+        border:       Border.all(color: const Color(0xFF333333)),
+      ),
+      child: Column(
+        children: [
+          // ── Ondes sonores ────────────────────────────────────────────────
+          SizedBox(
+            height: 56,
+            child: Row(
+              mainAxisAlignment: MainAxisAlignment.center,
+              crossAxisAlignment: CrossAxisAlignment.center,
+              children: List.generate(_waveBars.length, (i) {
+                final barColor = isRecording
+                    ? const Color(0xFFE53935)
+                    : isPaused
+                        ? const Color(0xFFE53935).withOpacity(0.4)
+                        : isDone
+                            ? AppColors.textMuted.withOpacity(0.6)
+                            : AppColors.textMuted.withOpacity(0.3);
+
+                return AnimatedContainer(
+                  duration: const Duration(milliseconds: 80),
+                  width:  3,
+                  height: 56 * _waveBars[i],
+                  margin: const EdgeInsets.symmetric(horizontal: 1.5),
+                  decoration: BoxDecoration(
+                    color:        barColor,
+                    borderRadius: BorderRadius.circular(2),
+                  ),
+                );
+              }),
+            ),
+          ),
+
+          const SizedBox(height: 16),
+
+          // ── Timer ────────────────────────────────────────────────────────
+          Text(_elapsedLabel,
+              style: const TextStyle(
+                fontSize:     36,
+                fontWeight:   FontWeight.w300,
+                color:        AppColors.textPrimary,
+                fontFeatures: [FontFeature.tabularFigures()],
+              )),
+
+          const SizedBox(height: 8),
+
+          // ── Statut ───────────────────────────────────────────────────────
+          Row(
+            mainAxisAlignment: MainAxisAlignment.center,
+            children: [
+              if (isRecording)
+                Container(
+                  width: 8, height: 8,
+                  margin: const EdgeInsets.only(right: 6),
+                  decoration: const BoxDecoration(
+                    color: Color(0xFFE53935), shape: BoxShape.circle),
+                ),
+              Text(_statusLabel(_status),
+                  style: TextStyle(
+                    fontSize: 12,
+                    color: isRecording
+                        ? const Color(0xFFE53935)
+                        : AppColors.textMuted,
+                  )),
+            ],
+          ),
+        ],
+      ),
+    );
+  }
+
+  String _statusLabel(_Status s) {
+    switch (s) {
+      case _Status.idle:      return 'Prêt à enregistrer';
+      case _Status.recording: return 'Enregistrement en cours';
+      case _Status.paused:    return 'En pause';
+      case _Status.done:      return 'Enregistrement terminé';
+    }
   }
 
   Widget _buildDeviceSelector() {
@@ -268,8 +412,7 @@ class _AudioRecordSheetState extends State<AudioRecordSheet> {
                       ),
                       const SizedBox(width: 8),
                       Expanded(
-                        child: Text(d.name,
-                            overflow: TextOverflow.ellipsis),
+                        child: Text(d.name, overflow: TextOverflow.ellipsis),
                       ),
                     ],
                   ),
@@ -283,83 +426,6 @@ class _AudioRecordSheetState extends State<AudioRecordSheet> {
         ],
       ),
     );
-  }
-}
-
-class _Magnetophone extends StatelessWidget {
-  final _Status status;
-  final String  elapsedLabel;
-  const _Magnetophone({required this.status, required this.elapsedLabel});
-
-  @override
-  Widget build(BuildContext context) {
-    final isRecording = status == _Status.recording;
-    return Container(
-      padding: const EdgeInsets.symmetric(vertical: 28, horizontal: 24),
-      decoration: BoxDecoration(
-        color:        AppColors.inputFill,
-        borderRadius: BorderRadius.circular(16),
-        border:       Border.all(color: const Color(0xFF333333)),
-      ),
-      child: Column(
-        children: [
-          Stack(
-            alignment: Alignment.center,
-            children: [
-              if (isRecording)
-                Container(
-                  width: 80, height: 80,
-                  decoration: BoxDecoration(
-                    shape: BoxShape.circle,
-                    color: const Color(0xFFE53935).withOpacity(0.15),
-                  ),
-                ),
-              Container(
-                width: 64, height: 64,
-                decoration: BoxDecoration(
-                  shape: BoxShape.circle,
-                  color: isRecording
-                      ? const Color(0xFFE53935).withOpacity(0.2)
-                      : AppColors.surface,
-                  border: Border.all(
-                    color: isRecording
-                        ? const Color(0xFFE53935)
-                        : const Color(0xFF444444),
-                  ),
-                ),
-                child: Icon(Icons.mic, size: 30,
-                    color: isRecording
-                        ? const Color(0xFFE53935)
-                        : AppColors.textMuted),
-              ),
-            ],
-          ),
-          const SizedBox(height: 20),
-          Text(elapsedLabel,
-              style: const TextStyle(
-                fontSize:     36,
-                fontWeight:   FontWeight.w300,
-                color:        AppColors.textPrimary,
-                fontFeatures: [FontFeature.tabularFigures()],
-              )),
-          const SizedBox(height: 8),
-          Text(_statusLabel(status),
-              style: TextStyle(fontSize: 12,
-                  color: isRecording
-                      ? const Color(0xFFE53935)
-                      : AppColors.textMuted)),
-        ],
-      ),
-    );
-  }
-
-  String _statusLabel(_Status s) {
-    switch (s) {
-      case _Status.idle:      return 'Prêt à enregistrer';
-      case _Status.recording: return '● Enregistrement en cours';
-      case _Status.paused:    return 'En pause';
-      case _Status.done:      return 'Enregistrement terminé';
-    }
   }
 }
 
