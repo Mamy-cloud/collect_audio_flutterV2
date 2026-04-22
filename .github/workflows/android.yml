@@ -38,8 +38,9 @@ jobs:
       - name: Flutter pub get
         run: flutter pub get
 
-      - name: Vérifier version record
-        run: flutter pub deps | grep record
+      - name: Remove GeneratedPluginRegistrant
+        run: |
+          find . -name "GeneratedPluginRegistrant.java" -delete
 
       - name: Flutter analyze
         run: flutter analyze lib/ --no-fatal-infos
