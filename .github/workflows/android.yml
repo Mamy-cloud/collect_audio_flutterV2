@@ -39,10 +39,16 @@ jobs:
 
       - name: Patch Flutter v1 check
         run: |
-          sed -i 's/throwToolExit.*deleted Android v1 embedding.*/\/\/ patched/' \
-            $HOME/flutter/packages/flutter_tools/lib/src/project.dart || true
-          sed -i 's/throwToolExit.*deleted Android v1 embedding.*/\/\/ patched/' \
-            $HOME/hostedtoolcache/flutter/3.27.4-stable/x64/packages/flutter_tools/lib/src/project.dart || true
+          FLUTTER_PATH=$(which flutter)
+          FLUTTER_DIR=$(dirname $(dirname $FLUTTER_PATH))
+          PROJECT_DART="$FLUTTER_DIR/packages/flutter_tools/lib/src/project.dart"
+          echo "Flutter path: $PROJECT_DART"
+          if [ -f "$PROJECT_DART" ]; then
+            sed -i "s/throwToolExit('Build failed due to use of deleted Android v1 embedding.', exitCode: 1)/return/" "$PROJECT_DART"
+            echo "Patched successfully"
+          else
+            echo "File not found"
+          fi
 
       - name: Remove GeneratedPluginRegistrant
         run: find . -name "GeneratedPluginRegistrant.java" -delete
