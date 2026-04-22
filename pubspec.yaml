@@ -1,5 +1,5 @@
-name: mon_application
-description: Nouvelle application Flutter
+name: collect_audio_flutter
+description: Application de collecte de témoignages oraux
 
 publish_to: 'none'
 version: 1.0.0+1
@@ -15,7 +15,7 @@ dependencies:
   sqflite:            ^2.3.0
   path:               ^1.9.0
   audioplayers:       ^6.0.0
-  record:             5.0.4
+  flutter_sound:      ^9.0.0
   permission_handler: ^11.0.0
   uuid:               ^4.4.0
   image_picker:       ^1.0.0
@@ -24,8 +24,6 @@ dependencies:
   connectivity_plus:  ^6.0.0
   shared_preferences: ^2.2.0
   signature:          ^5.5.0
-
-
 
 dev_dependencies:
   flutter_test:
