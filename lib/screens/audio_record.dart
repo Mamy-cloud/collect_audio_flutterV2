@@ -46,13 +46,13 @@ class _AudioRecordSheetState extends State<AudioRecordSheet> {
   }
 
   void _startWaveAccumulation() {
-    _waveTimer = Timer.periodic(const Duration(milliseconds: 100), (_) {
+    _waveTimer = Timer.periodic(const Duration(milliseconds: 150), (_) {
       if (!mounted) return;
-      setState(() {
-        // Amplitude aléatoire simulée — sera remplacé par amplitude réelle
-        final amp = 0.15 + _random.nextDouble() * 0.85;
-        _waveData.add(amp);
-      });
+      // Amplitude avec lissage : moyenne pondérée de la barre précédente
+      final prev = _waveData.isNotEmpty ? _waveData.last : 0.5;
+      final raw  = 0.15 + _random.nextDouble() * 0.85;
+      final amp  = prev * 0.4 + raw * 0.6;   // lissage
+      setState(() => _waveData.add(amp));
     });
   }
 
@@ -392,67 +392,84 @@ class _WaveformPainter extends CustomPainter {
 
   @override
   void paint(Canvas canvas, Size size) {
-    if (waveData.isEmpty) {
-      // Ligne centrale vide
-      final paint = Paint()
-        ..color  = const Color(0xFF444444)
-        ..strokeWidth = 1;
-      canvas.drawLine(
-        Offset(0, size.height / 2),
-        Offset(size.width, size.height / 2),
-        paint,
-      );
-      return;
-    }
+    const barWidth = 3.0;
+    const barGap   = 2.0;
+    const barStep  = barWidth + barGap;
+    final centerY  = size.height / 2;
+    final maxBars  = (size.width / barStep).floor();
 
-    const barWidth  = 2.5;
-    const barGap    = 1.5;
-    const barStep   = barWidth + barGap;
-    final maxBars   = (size.width / barStep).floor();
-    final centerY   = size.height / 2;
+    // ── Zone passée (gauche, 1/3) et zone future (droite, 2/3) ────────────
+    final cursorX = size.width / 3;
 
-    // Prendre les N dernières barres qui rentrent dans la zone
+    // Ligne de fond
+    canvas.drawLine(
+      Offset(0, centerY),
+      Offset(size.width, centerY),
+      Paint()..color = const Color(0xFF2A2A2A)..strokeWidth = 1,
+    );
+
+    if (waveData.isEmpty) return;
+
+    // Barres visibles — les dernières maxBars
     final visible = waveData.length > maxBars
         ? waveData.sublist(waveData.length - maxBars)
         : waveData;
 
-    for (int i = 0; i < visible.length; i++) {
-      final x         = i * barStep + barWidth / 2;
-      final amplitude = visible[i];
-      final barH      = max(2.0, amplitude * size.height * 0.9);
-
-      // Couleur : barre active (dernière) plus vive
-      final isLast    = i == visible.length - 1 && isRecording;
-      final color     = isRecording
-          ? (isLast
-              ? const Color(0xFFFF5252)
-              : const Color(0xFFE53935).withOpacity(0.7 + 0.3 * amplitude))
+    final pastPaint = Paint()
+      ..color       = isRecording
+          ? const Color(0xFFE53935).withValues(alpha: 0.5)
           : isPaused
-              ? const Color(0xFFE53935).withOpacity(0.4)
-              : const Color(0xFF666666);
+              ? const Color(0xFFE53935).withValues(alpha: 0.3)
+              : const Color(0xFF555555)
+      ..strokeWidth = barWidth
+      ..strokeCap   = StrokeCap.round;
 
-      final paint = Paint()
-        ..color       = color
-        ..strokeWidth = barWidth
-        ..strokeCap   = StrokeCap.round;
+    final activePaint = Paint()
+      ..color       = isRecording
+          ? const Color(0xFFE53935)
+          : isPaused
+              ? const Color(0xFFE53935).withValues(alpha: 0.6)
+              : const Color(0xFF777777)
+      ..strokeWidth = barWidth
+      ..strokeCap   = StrokeCap.round;
 
+    final futurePaint = Paint()
+      ..color       = const Color(0xFF333333)
+      ..strokeWidth = barWidth
+      ..strokeCap   = StrokeCap.round;
+
+    for (int i = 0; i < visible.length; i++) {
+      final barH  = max(2.0, visible[i] * size.height * 0.85);
+      final xPos  = i * barStep + barWidth / 2;
+      final isActive = i == visible.length - 1;
+
+      final paint = isActive ? activePaint : pastPaint;
       canvas.drawLine(
-        Offset(x, centerY - barH / 2),
-        Offset(x, centerY + barH / 2),
+        Offset(xPos, centerY - barH / 2),
+        Offset(xPos, centerY + barH / 2),
         paint,
       );
     }
 
-    // Ligne de progression (curseur rouge à droite)
-    if (isRecording && visible.isNotEmpty) {
-      final cursorX = visible.length * barStep;
-      final cursorPaint = Paint()
-        ..color       = const Color(0xFFE53935)
-        ..strokeWidth = 1.5;
+    // Barres futures (vides, à droite du curseur)
+    for (int i = visible.length; i < maxBars; i++) {
+      final xPos = i * barStep + barWidth / 2;
       canvas.drawLine(
-        Offset(cursorX, 0),
-        Offset(cursorX, size.height),
-        cursorPaint,
+        Offset(xPos, centerY - 2),
+        Offset(xPos, centerY + 2),
+        futurePaint,
+      );
+    }
+
+    // Curseur rouge à 1/3
+    if (isRecording || isPaused) {
+      final cx = (visible.length * barStep).clamp(0.0, size.width).toDouble();
+      canvas.drawLine(
+        Offset(cx, 0),
+        Offset(cx, size.height),
+        Paint()
+          ..color       = const Color(0xFFFF5252)
+          ..strokeWidth = 1.5,
       );
     }
   }
