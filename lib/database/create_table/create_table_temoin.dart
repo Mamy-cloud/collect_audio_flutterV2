@@ -1,6 +1,6 @@
 // create_table_temoin.dart
 // Android/iOS → sqflite natif
-// Version 9 — signature_url et accepte_rgpd déplacés dans info_perso_temoin
+// Version 10 — ajout last_login dans login_user
 
 import 'package:sqflite/sqflite.dart';
 import 'package:path/path.dart';
@@ -19,7 +19,7 @@ class CreateTableTemoin {
 
     _db = await openDatabase(
       path,
-      version: 9,
+      version: 10,
       onCreate: (db, version) async {
         await _createLoginUser(db);
         await _createInfoPersoTemoin(db);
@@ -70,6 +70,12 @@ class CreateTableTemoin {
             "ALTER TABLE info_perso_temoin ADD COLUMN accepte_rgpd INTEGER NOT NULL DEFAULT 0",
           );
         }
+        if (oldVersion < 10) {
+          // Ajout last_login pour savoir quel user a été connecté en dernier
+          await db.execute(
+            "ALTER TABLE login_user ADD COLUMN last_login TEXT",
+          );
+        }
       },
       onOpen: (db) async {
         await db.execute('PRAGMA foreign_keys = ON');
@@ -83,6 +89,7 @@ class CreateTableTemoin {
         id          TEXT PRIMARY KEY,
         identifiant TEXT NOT NULL UNIQUE,
         password    TEXT NOT NULL,
+        last_login  TEXT,
         created_at  TEXT NOT NULL
       )
     ''');
@@ -129,6 +136,29 @@ class CreateTableTemoin {
         FOREIGN KEY (collect_id) REFERENCES collect_info_from_temoin(id)
       )
     ''');
+  }
+
+  // ─── Récupère le dernier utilisateur connecté ─────────────────────────────
+
+  static Future<Map<String, dynamic>?> getLastLoggedUser() async {
+    final result = await _db!.query(
+      'login_user',
+      where:   'last_login IS NOT NULL',
+      orderBy: 'last_login DESC',
+      limit:   1,
+    );
+    return result.isNotEmpty ? result.first : null;
+  }
+
+  // ─── Met à jour last_login après connexion ────────────────────────────────
+
+  static Future<void> updateLastLogin(String id) async {
+    await _db!.update(
+      'login_user',
+      {'last_login': DateTime.now().toIso8601String()},
+      where:     'id = ?',
+      whereArgs: [id],
+    );
   }
 
   static Future<Map<String, dynamic>?> getUserByIdentifiant(

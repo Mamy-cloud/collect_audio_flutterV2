@@ -1,3 +1,4 @@
+// router.dart
 import 'package:go_router/go_router.dart';
 import '../screens/login_screen.dart';
 import '../screens/list_temoin_screen.dart';
@@ -10,10 +11,43 @@ import '../notifications_screens/notification_save_collect_info_temoin_screen.da
 import '../notifications_screens/notification_update_delete.dart';
 import '../widgets/global/app_navbar.dart';
 import '../database/save_questionnaire/list_collect_data.dart';
+import '../services/session_service.dart';
+import '../database/create_table/create_table_temoin.dart';
+import 'package:flutter/material.dart';
 
 final router = GoRouter(
-  initialLocation: '/login',
+  initialLocation: '/splash',
+  redirect: (context, state) async {
+    // Laisse passer le splash sans vérification
+    if (state.matchedLocation == '/splash') return null;
+
+    // Si session déjà en mémoire → laisse passer
+    if (SessionService.isLoggedIn) return null;
+
+    // Tente de restaurer depuis SQLite
+    final restored = await SessionService.restoreSession();
+
+    if (restored) {
+      // Session restaurée → redirige vers list_temoin si on allait vers login
+      if (state.matchedLocation == '/login') {
+        return '/list_temoin';
+      }
+      return null;
+    }
+
+    // Pas de session → force le login
+    if (state.matchedLocation != '/login') {
+      return '/login';
+    }
+    return null;
+  },
   routes: [
+
+    // ── Splash — initialise SQLite et vérifie la session ──────────────────────
+    GoRoute(
+      path:    '/splash',
+      builder: (_, __) => const _SplashScreen(),
+    ),
 
     // ── Hors ShellRoute — pas de navbar ───────────────────────────────────────
     GoRoute(
@@ -95,3 +129,48 @@ final router = GoRouter(
     ),
   ],
 );
+
+// ── Splash Screen — initialise SQLite et restaure la session ──────────────────
+
+class _SplashScreen extends StatefulWidget {
+  const _SplashScreen();
+
+  @override
+  State<_SplashScreen> createState() => _SplashScreenState();
+}
+
+class _SplashScreenState extends State<_SplashScreen> {
+
+  @override
+  void initState() {
+    super.initState();
+    _initApp();
+  }
+
+  Future<void> _initApp() async {
+    // Initialise SQLite
+    await CreateTableTemoin.init();
+
+    // Tente de restaurer le dernier user connecté
+    final restored = await SessionService.restoreSession();
+
+    if (!mounted) return;
+
+    if (restored) {
+      // Dernier user trouvé → va directement dans l'appli sans login
+      context.go('/list_temoin');
+    } else {
+      // SQLite vide → connexion internet requise
+      context.go('/login');
+    }
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    return const Scaffold(
+      body: Center(
+        child: CircularProgressIndicator(),
+      ),
+    );
+  }
+}

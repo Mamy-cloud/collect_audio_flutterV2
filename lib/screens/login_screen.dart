@@ -29,8 +29,6 @@ class _LoginScreenState extends State<LoginScreen> {
     _checkServer();
   }
 
-  // ── Vérifie internet + serveur au démarrage ───────────────────────────────
-
   Future<void> _checkServer() async {
     final check = await LoginApiService.checkServerStatus();
     if (mounted) {
@@ -63,6 +61,7 @@ class _LoginScreenState extends State<LoginScreen> {
         'id':          id,
         'identifiant': identifiant,
         'password':    password,
+        'last_login':  DateTime.now().toIso8601String(),
         'created_at':  DateTime.now().toIso8601String(),
       });
     } else {
@@ -71,6 +70,7 @@ class _LoginScreenState extends State<LoginScreen> {
         {
           'identifiant': identifiant,
           'password':    password,
+          'last_login':  DateTime.now().toIso8601String(),
         },
         where:     'id = ?',
         whereArgs: [id],
@@ -89,13 +89,11 @@ class _LoginScreenState extends State<LoginScreen> {
       return;
     }
 
-    // ── Bloque si pas d'internet ───────────────────────────────────────────
     if (!_internetAvailable) {
       _snack('Connexion Internet requise pour se connecter.');
       return;
     }
 
-    // ── Bloque si serveur inaccessible ─────────────────────────────────────
     if (!_serverAvailable) {
       _snack('Serveur inaccessible. Réessayez plus tard.');
       return;
@@ -103,7 +101,6 @@ class _LoginScreenState extends State<LoginScreen> {
 
     setState(() => _isLoading = true);
 
-    // ── Envoie identifiant + password vers FastAPI ─────────────────────────
     final result = await LoginApiService.login(
       identifiant: identifiant,
       password:    password,
@@ -123,7 +120,7 @@ class _LoginScreenState extends State<LoginScreen> {
       return;
     }
 
-    // ── Connexion réussie → upsert dans SQLite local ───────────────────────
+    // ── Connexion réussie → upsert SQLite + last_login ─────────────────────
     await _upsertUserInSqlite(
       id:          result.userId!,
       identifiant: identifiant,
@@ -133,8 +130,8 @@ class _LoginScreenState extends State<LoginScreen> {
     if (!mounted) return;
     setState(() => _isLoading = false);
 
-    // ── Sauvegarde session et redirige ─────────────────────────────────────
-    SessionService.login(result.userId!, identifiant);
+    // ── Sauvegarde session mémoire et redirige ─────────────────────────────
+    await SessionService.login(result.userId!, identifiant);
     context.go('/list_temoin');
   }
 
@@ -175,7 +172,6 @@ class _LoginScreenState extends State<LoginScreen> {
                   const LoginHeroImage(assetPath: 'assets/img/logo_essai.png'),
                   const SizedBox(height: 20),
 
-                  // ── Statut connexion + serveur ───────────────────────────
                   Row(
                     mainAxisAlignment: MainAxisAlignment.center,
                     children: [
