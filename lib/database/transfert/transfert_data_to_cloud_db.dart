@@ -48,7 +48,7 @@ class TransfertDataToCloudDb {
     try {
       final response = await http
           .get(Uri.parse(ApiConfig.healthCloud))   // ← ApiConfig
-          .timeout(const Duration(seconds: 10));
+          .timeout(const Duration(seconds: 100));
       return response.statusCode == 200;
     } catch (_) {
       return false;
@@ -59,7 +59,7 @@ class TransfertDataToCloudDb {
     try {
       final response = await http
           .get(Uri.parse('${ApiConfig.collectes}/$userId'))  // ← ApiConfig
-          .timeout(const Duration(seconds: 10));
+          .timeout(const Duration(seconds: 100));
       if (response.statusCode == 200) {
         final data = jsonDecode(response.body);
         return data['collectes'] as List<dynamic>;
