@@ -7,7 +7,7 @@ class ApiConfig {
   // 🔧 Dev Android émulateur  : 'http://10.0.2.2:8000'
   // 🔧 Dev appareil physique  : 'http://192.168.43.213:8000'
   // 🚀 Production             : 'https://ton-domaine.com'
-  static const String baseUrl = 'https://conta-backend-fastapi.onrender.comt';
+  static const String baseUrl = 'https://conta-backend-fastapi.onrender.com';
 
   // ─── Login ─────────────────────────────────────────────────────────────────
   static const String statusLogin = '$baseUrl/mobile/verif/status/login/mobile';
