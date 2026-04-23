@@ -10,7 +10,12 @@ import 'package:http/http.dart' as http;
 import '../create_table/create_table_temoin.dart';
 
 class TransfertDataToCloudDb {
-  static const String _baseUrl = 'https://ton-serveur-fastapi.com';
+  // ─── URLs ──────────────────────────────────────────────────────────────────
+  static const String _baseUrl = 'http://192.168.43.213:8000';
+
+  static const String _syncEndpoint      = '$_baseUrl/mobile/transfert/cloud/sync';
+  static const String _healthEndpoint    = '$_baseUrl/mobile/transfert/cloud/health';
+  static const String _collectesEndpoint = '$_baseUrl/mobile/transfert/cloud/collectes';
 
   StreamSubscription? _connectivitySubscription;
 
@@ -51,10 +56,48 @@ class TransfertDataToCloudDb {
         !results.contains(ConnectivityResult.none);
   }
 
+  // ── Vérifie que le serveur FastAPI est opérationnel ───────────────────────
+
+  static Future<bool> checkServerHealth() async {
+    try {
+      final response = await http
+          .get(Uri.parse(_healthEndpoint))
+          .timeout(const Duration(seconds: 10));
+      return response.statusCode == 200;
+    } catch (_) {
+      return false;
+    }
+  }
+
+  // ── Récupère les collectes synchronisées d'un utilisateur ─────────────────
+
+  static Future<List<dynamic>> getCollectesByUser(String userId) async {
+    try {
+      final response = await http
+          .get(Uri.parse('$_collectesEndpoint/$userId'))
+          .timeout(const Duration(seconds: 10));
+
+      if (response.statusCode == 200) {
+        final data = jsonDecode(response.body);
+        return data['collectes'] as List<dynamic>;
+      }
+      return [];
+    } catch (_) {
+      return [];
+    }
+  }
+
   // ── Transfert uniquement les non synchronisées ────────────────────────────
 
   Future<void> transferAll() async {
     try {
+      // Vérifie que le serveur est disponible avant de commencer
+      final serverOk = await checkServerHealth();
+      if (!serverOk) {
+        onError?.call('Serveur FastAPI indisponible');
+        return;
+      }
+
       final db = CreateTableTemoin.db;
 
       // Récupère uniquement les collectes non synchronisées
@@ -95,7 +138,7 @@ class TransfertDataToCloudDb {
                 )
               : <String, Object?>{};
 
-          // Envoie vers FastAPI
+          // Envoie vers FastAPI /mobile/transfert/cloud/sync
           await _uploadCollecte(collecte: collecte, temoin: temoin);
 
           // Marque comme synchronisé dans la DB locale
@@ -121,19 +164,19 @@ class TransfertDataToCloudDb {
     }
   }
 
-  // ── Upload vers FastAPI ────────────────────────────────────────────────────
+  // ── Upload vers FastAPI /mobile/transfert/cloud/sync ──────────────────────
 
   Future<void> _uploadCollecte({
     required Map<String, dynamic> collecte,
     required Map<String, dynamic> temoin,
   }) async {
-    final uri     = Uri.parse('$_baseUrl/sync');
-    final request = http.MultipartRequest('POST', uri);
+    final request = http.MultipartRequest('POST', Uri.parse(_syncEndpoint));
 
     // Données JSON
+    request.fields['user_id']       = collecte['user_id'] as String? ?? 'test';
     request.fields['temoin']        = jsonEncode(temoin);
     request.fields['questionnaire'] = collecte['questionnaire'] as String;
-    request.fields['user_id']       = collecte['user_id'] as String? ?? 'test';
+    request.fields['duree_audio']   = (collecte['duree_audio'] ?? 0).toString();
 
     // Fichier audio
     final audioPath = collecte['url_audio'] as String?;
@@ -162,7 +205,8 @@ class TransfertDataToCloudDb {
     final response = await http.Response.fromStream(streamed);
 
     if (response.statusCode != 200) {
-      throw Exception('Erreur ${response.statusCode}: ${response.body}');
+      final body = jsonDecode(response.body);
+      throw Exception('Erreur ${response.statusCode}: ${body['detail'] ?? response.body}');
     }
   }
 }
