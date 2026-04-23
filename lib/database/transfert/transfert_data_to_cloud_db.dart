@@ -1,24 +1,14 @@
 // transfert_data_to_cloud_db.dart
-// Transfert automatique vers FastAPI + Supabase
-// Envoie uniquement les collectes non encore synchronisées (synced = 0)
-
 import 'dart:convert';
 import 'dart:io';
 import 'dart:async';
 import 'package:connectivity_plus/connectivity_plus.dart';
 import 'package:http/http.dart' as http;
 import '../create_table/create_table_temoin.dart';
+import '../../url_Api/api_config.dart';          // ← import centralisé
 
 class TransfertDataToCloudDb {
-  // ─── URLs ──────────────────────────────────────────────────────────────────
-  static const String _baseUrl           = 'http://192.168.43.213:8000';
-  static const String _syncEndpoint      = '$_baseUrl/mobile/transfert/cloud/sync';
-  static const String _healthEndpoint    = '$_baseUrl/mobile/transfert/cloud/health';
-  static const String _collectesEndpoint = '$_baseUrl/mobile/transfert/cloud/collectes';
-
   StreamSubscription? _connectivitySubscription;
-
-  // Empêche les lancements multiples simultanés
   bool _isRunning = false;
 
   final void Function(bool isConnected)?            onConnectivityChanged;
@@ -35,8 +25,6 @@ class TransfertDataToCloudDb {
     this.onError,
   });
 
-  // ── Écoute connexion ───────────────────────────────────────────────────────
-
   void startListening() {
     _connectivitySubscription = Connectivity()
         .onConnectivityChanged
@@ -48,9 +36,7 @@ class TransfertDataToCloudDb {
     });
   }
 
-  void stopListening() {
-    _connectivitySubscription?.cancel();
-  }
+  void stopListening() => _connectivitySubscription?.cancel();
 
   static Future<bool> isConnected() async {
     final results = await Connectivity().checkConnectivity();
@@ -58,12 +44,10 @@ class TransfertDataToCloudDb {
         !results.contains(ConnectivityResult.none);
   }
 
-  // ── Vérifie que le serveur FastAPI est opérationnel ───────────────────────
-
   static Future<bool> checkServerHealth() async {
     try {
       final response = await http
-          .get(Uri.parse(_healthEndpoint))
+          .get(Uri.parse(ApiConfig.healthCloud))   // ← ApiConfig
           .timeout(const Duration(seconds: 10));
       return response.statusCode == 200;
     } catch (_) {
@@ -71,12 +55,10 @@ class TransfertDataToCloudDb {
     }
   }
 
-  // ── Récupère les collectes synchronisées d'un utilisateur ─────────────────
-
   static Future<List<dynamic>> getCollectesByUser(String userId) async {
     try {
       final response = await http
-          .get(Uri.parse('$_collectesEndpoint/$userId'))
+          .get(Uri.parse('${ApiConfig.collectes}/$userId'))  // ← ApiConfig
           .timeout(const Duration(seconds: 10));
       if (response.statusCode == 200) {
         final data = jsonDecode(response.body);
@@ -88,74 +70,49 @@ class TransfertDataToCloudDb {
     }
   }
 
-  // ── Transfert en arrière-plan (même si on change d'onglet) ───────────────
-
   Future<void> transferAll() async {
-    // Évite les appels multiples simultanés
     if (_isRunning) return;
     _isRunning = true;
 
     try {
-      // 1. Vérifie le serveur avant tout
       final serverOk = await checkServerHealth();
       if (!serverOk) {
         onError?.call('Serveur indisponible. Réessayez plus tard.');
         return;
       }
 
-      final db = CreateTableTemoin.db;
-
-      // 2. Récupère uniquement les collectes non synchronisées
+      final db       = CreateTableTemoin.db;
       final collectes = await db.query(
         'collect_info_from_temoin',
         where: 'synced = ?',
         whereArgs: [0],
       );
 
-      if (collectes.isEmpty) {
-        onComplete?.call();
-        return;
-      }
+      if (collectes.isEmpty) { onComplete?.call(); return; }
 
       final temoins = await db.query('info_perso_temoin');
-
       int done = 0;
       onProgress?.call(0, collectes.length);
 
       for (final collecte in collectes) {
         final collectId = collecte['id'] as String;
         final label     = 'Collecte $collectId';
-
         onItemStatus?.call(label, 'uploading');
 
         try {
-          // Trouve le témoin associé
-          final q = jsonDecode(collecte['questionnaire'] as String)
-              as List<dynamic>;
+          final q = jsonDecode(collecte['questionnaire'] as String) as List<dynamic>;
           final temoinId = q.isNotEmpty && q.first['champ'] == 'temoin_id'
-              ? q.first['valeur'] as String
-              : null;
-
+              ? q.first['valeur'] as String : null;
           final temoin = temoinId != null
-              ? temoins.firstWhere(
-                  (t) => t['id'] == temoinId,
-                  orElse: () => {},
-                )
+              ? temoins.firstWhere((t) => t['id'] == temoinId, orElse: () => {})
               : <String, Object?>{};
 
-          // Envoie vers FastAPI et attend la réponse
-          final success = await _uploadCollecte(
-            collecte: collecte,
-            temoin: temoin,
-          );
+          final success = await _uploadCollecte(collecte: collecte, temoin: temoin);
 
           if (success) {
-            // Marque comme synchronisé dans la DB locale
             await db.update(
-              'collect_info_from_temoin',
-              {'synced': 1},
-              where:     'id = ?',
-              whereArgs: [collectId],
+              'collect_info_from_temoin', {'synced': 1},
+              where: 'id = ?', whereArgs: [collectId],
             );
             onItemStatus?.call(label, 'done');
           } else {
@@ -164,71 +121,55 @@ class TransfertDataToCloudDb {
 
           done++;
           onProgress?.call(done, collectes.length);
-
-        } catch (e) {
+        } catch (_) {
           onItemStatus?.call(label, 'error');
           done++;
           onProgress?.call(done, collectes.length);
         }
       }
-
       onComplete?.call();
-
     } catch (e) {
       onError?.call(e.toString());
     } finally {
-      // Toujours libérer le verrou
       _isRunning = false;
     }
   }
-
-  // ── Upload vers FastAPI /mobile/transfert/cloud/sync ──────────────────────
-  // Retourne true si le serveur confirme le succès, false sinon
 
   Future<bool> _uploadCollecte({
     required Map<String, dynamic> collecte,
     required Map<String, dynamic> temoin,
   }) async {
-    final request = http.MultipartRequest('POST', Uri.parse(_syncEndpoint));
+    final request = http.MultipartRequest(
+      'POST',
+      Uri.parse(ApiConfig.syncCloud),              // ← ApiConfig
+    );
 
-    // Données JSON
-    request.fields['user_id']       = collecte['user_id'] as String? ?? 'test';
+    request.fields['user_id']       = collecte['user_id'] as String? ?? '';
     request.fields['temoin']        = jsonEncode(temoin);
     request.fields['questionnaire'] = collecte['questionnaire'] as String;
     request.fields['duree_audio']   = (collecte['duree_audio'] ?? 0).toString();
 
-    // Fichier audio
     final audioPath = collecte['url_audio'] as String?;
     if (audioPath != null && File(audioPath).existsSync()) {
       request.files.add(await http.MultipartFile.fromPath(
-        'audio',
-        audioPath,
-        filename: audioPath.split('/').last,
+        'audio', audioPath, filename: audioPath.split('/').last,
       ));
     }
 
-    // Image du témoin
     final imgPath = temoin['img_temoin'] as String?;
     if (imgPath != null && File(imgPath).existsSync()) {
       request.files.add(await http.MultipartFile.fromPath(
-        'image',
-        imgPath,
-        filename: imgPath.split('/').last,
+        'image', imgPath, filename: imgPath.split('/').last,
       ));
     }
 
-    final streamed = await request.send().timeout(
-      const Duration(seconds: 60),
-      onTimeout: () => throw Exception('Timeout connexion FastAPI'),
-    );
+    final streamed = await request.send().timeout(const Duration(seconds: 60));
     final response = await http.Response.fromStream(streamed);
 
     if (response.statusCode == 200) {
       final body = jsonDecode(response.body);
-      // Vérifie la réponse du backend
       return body['success'] == true;
     }
-
     return false;
   }
 }

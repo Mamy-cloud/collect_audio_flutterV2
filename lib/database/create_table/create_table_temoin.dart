@@ -21,10 +21,9 @@ class CreateTableTemoin {
       path,
       version: 9,
       onCreate: (db, version) async {
-        await _createInfoPersoTemoin(db);
         await _createLoginUser(db);
+        await _createInfoPersoTemoin(db);
         await _createCollectInfoFromTemoin(db);
-        await _insertTestUsers(db);
       },
       onUpgrade: (db, oldVersion, newVersion) async {
         if (oldVersion < 2) {
@@ -64,7 +63,6 @@ class CreateTableTemoin {
           );
         }
         if (oldVersion < 9) {
-          // Déplace signature et RGPD dans info_perso_temoin
           await db.execute(
             "ALTER TABLE info_perso_temoin ADD COLUMN signature_url TEXT",
           );
@@ -75,19 +73,18 @@ class CreateTableTemoin {
       },
       onOpen: (db) async {
         await db.execute('PRAGMA foreign_keys = ON');
-        await _insertTestUsers(db);
       },
     );
   }
 
-  static Future<void> _insertTestUsers(Database db) async {
+  static Future<void> _createLoginUser(Database db) async {
     await db.execute('''
-      INSERT OR IGNORE INTO login_user (id, identifiant, password, created_at)
-      VALUES ('user_id_001', 'user1', '1234', '2024-01-01T00:00:00.000')
-    ''');
-    await db.execute('''
-      INSERT OR IGNORE INTO login_user (id, identifiant, password, created_at)
-      VALUES ('user_id_002', 'user2', '5678', '2024-01-01T00:00:00.000')
+      CREATE TABLE IF NOT EXISTS login_user (
+        id          TEXT PRIMARY KEY,
+        identifiant TEXT NOT NULL UNIQUE,
+        password    TEXT NOT NULL,
+        created_at  TEXT NOT NULL
+      )
     ''');
   }
 
@@ -107,17 +104,6 @@ class CreateTableTemoin {
         accepte_rgpd   INTEGER NOT NULL DEFAULT 0,
         date_creation  TEXT NOT NULL,
         FOREIGN KEY (user_id) REFERENCES login_user(id)
-      )
-    ''');
-  }
-
-  static Future<void> _createLoginUser(Database db) async {
-    await db.execute('''
-      CREATE TABLE IF NOT EXISTS login_user (
-        id          TEXT PRIMARY KEY,
-        identifiant TEXT NOT NULL UNIQUE,
-        password    TEXT NOT NULL,
-        created_at  TEXT NOT NULL
       )
     ''');
   }

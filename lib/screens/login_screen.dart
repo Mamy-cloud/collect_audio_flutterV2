@@ -1,7 +1,9 @@
+// login_screen.dart
 import 'package:flutter/material.dart';
 import 'package:go_router/go_router.dart';
-import '../database/create_table/create_table_temoin.dart';
 import '../services/session_service.dart';
+import '../services/login_api_service.dart';
+import '../database/create_table/create_table_temoin.dart';
 import '../widgets/global/app_styles.dart';
 import '../widgets/screens_widgets/login_widgets.dart';
 
@@ -15,7 +17,68 @@ class LoginScreen extends StatefulWidget {
 class _LoginScreenState extends State<LoginScreen> {
   final _identifiantCtrl = TextEditingController();
   final _codeCtrl        = TextEditingController();
-  bool  _isLoading       = false;
+
+  bool    _isLoading         = false;
+  bool    _internetAvailable = false;
+  bool    _serverAvailable   = false;
+  String  _statusMessage     = 'Vérification de la connexion...';
+
+  @override
+  void initState() {
+    super.initState();
+    _checkServer();
+  }
+
+  // ── Vérifie internet + serveur au démarrage ───────────────────────────────
+
+  Future<void> _checkServer() async {
+    final check = await LoginApiService.checkServerStatus();
+    if (mounted) {
+      setState(() {
+        _internetAvailable = check.internetAvailable;
+        _serverAvailable   = check.serverAvailable;
+        _statusMessage     = check.message;
+      });
+    }
+  }
+
+  // ── Insère ou met à jour l'utilisateur dans SQLite local ──────────────────
+
+  Future<void> _upsertUserInSqlite({
+    required String id,
+    required String identifiant,
+    required String password,
+  }) async {
+    final db = CreateTableTemoin.db;
+
+    final existing = await db.query(
+      'login_user',
+      where:     'id = ?',
+      whereArgs: [id],
+      limit:     1,
+    );
+
+    if (existing.isEmpty) {
+      await db.insert('login_user', {
+        'id':          id,
+        'identifiant': identifiant,
+        'password':    password,
+        'created_at':  DateTime.now().toIso8601String(),
+      });
+    } else {
+      await db.update(
+        'login_user',
+        {
+          'identifiant': identifiant,
+          'password':    password,
+        },
+        where:     'id = ?',
+        whereArgs: [id],
+      );
+    }
+  }
+
+  // ── Login principal ───────────────────────────────────────────────────────
 
   Future<void> _onLogin() async {
     final identifiant = _identifiantCtrl.text.trim();
@@ -26,25 +89,52 @@ class _LoginScreenState extends State<LoginScreen> {
       return;
     }
 
+    // ── Bloque si pas d'internet ───────────────────────────────────────────
+    if (!_internetAvailable) {
+      _snack('Connexion Internet requise pour se connecter.');
+      return;
+    }
+
+    // ── Bloque si serveur inaccessible ─────────────────────────────────────
+    if (!_serverAvailable) {
+      _snack('Serveur inaccessible. Réessayez plus tard.');
+      return;
+    }
+
     setState(() => _isLoading = true);
 
-    // Vérifie les identifiants en DB
-    final user = await CreateTableTemoin.login(identifiant, password);
+    // ── Envoie identifiant + password vers FastAPI ─────────────────────────
+    final result = await LoginApiService.login(
+      identifiant: identifiant,
+      password:    password,
+    );
+
+    if (!mounted) return;
+
+    if (!result.success) {
+      setState(() => _isLoading = false);
+      if (!result.identifiantOk) {
+        _snack('Identifiant incorrect.');
+      } else if (!result.passwordOk) {
+        _snack('Mot de passe incorrect.');
+      } else {
+        _snack(result.message);
+      }
+      return;
+    }
+
+    // ── Connexion réussie → upsert dans SQLite local ───────────────────────
+    await _upsertUserInSqlite(
+      id:          result.userId!,
+      identifiant: identifiant,
+      password:    password,
+    );
 
     if (!mounted) return;
     setState(() => _isLoading = false);
 
-    if (user == null) {
-      _snack('Identifiant ou code d\'accès incorrect');
-      return;
-    }
-
-    // Sauvegarde la session en mémoire
-    SessionService.login(
-      user['id'] as String,
-      user['identifiant'] as String,
-    );
-
+    // ── Sauvegarde session et redirige ─────────────────────────────────────
+    SessionService.login(result.userId!, identifiant);
     context.go('/list_temoin');
   }
 
@@ -85,6 +175,37 @@ class _LoginScreenState extends State<LoginScreen> {
                   const LoginHeroImage(assetPath: 'assets/img/logo_essai.png'),
                   const SizedBox(height: 20),
 
+                  // ── Statut connexion + serveur ───────────────────────────
+                  Row(
+                    mainAxisAlignment: MainAxisAlignment.center,
+                    children: [
+                      Container(
+                        width: 8, height: 8,
+                        decoration: BoxDecoration(
+                          shape: BoxShape.circle,
+                          color: _serverAvailable
+                              ? const Color(0xFF4CAF50)
+                              : _internetAvailable
+                                  ? const Color(0xFFFF9800)
+                                  : const Color(0xFFE53935),
+                        ),
+                      ),
+                      const SizedBox(width: 8),
+                      Text(
+                        _statusMessage,
+                        style: AppTextStyles.label.copyWith(
+                          fontSize: 12,
+                          color: _serverAvailable
+                              ? const Color(0xFF4CAF50)
+                              : _internetAvailable
+                                  ? const Color(0xFFFF9800)
+                                  : AppColors.textMuted,
+                        ),
+                      ),
+                    ],
+                  ),
+
+                  const SizedBox(height: 8),
                   Center(
                     child: Text(
                       'Connectez-vous pour continuer',
@@ -100,7 +221,7 @@ class _LoginScreenState extends State<LoginScreen> {
                   const SizedBox(height: 28),
 
                   LoginButton(
-                    onPressed: _onLogin,
+                    onPressed: _isLoading ? null : _onLogin,
                     isLoading: _isLoading,
                   ),
 
