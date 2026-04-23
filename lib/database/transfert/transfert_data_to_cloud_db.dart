@@ -11,13 +11,15 @@ import '../create_table/create_table_temoin.dart';
 
 class TransfertDataToCloudDb {
   // ─── URLs ──────────────────────────────────────────────────────────────────
-  static const String _baseUrl = 'http://192.168.43.213:8000';
-
+  static const String _baseUrl           = 'http://192.168.43.213:8000';
   static const String _syncEndpoint      = '$_baseUrl/mobile/transfert/cloud/sync';
   static const String _healthEndpoint    = '$_baseUrl/mobile/transfert/cloud/health';
   static const String _collectesEndpoint = '$_baseUrl/mobile/transfert/cloud/collectes';
 
   StreamSubscription? _connectivitySubscription;
+
+  // Empêche les lancements multiples simultanés
+  bool _isRunning = false;
 
   final void Function(bool isConnected)?            onConnectivityChanged;
   final void Function(int done, int total)?         onProgress;
@@ -76,7 +78,6 @@ class TransfertDataToCloudDb {
       final response = await http
           .get(Uri.parse('$_collectesEndpoint/$userId'))
           .timeout(const Duration(seconds: 10));
-
       if (response.statusCode == 200) {
         final data = jsonDecode(response.body);
         return data['collectes'] as List<dynamic>;
@@ -87,20 +88,24 @@ class TransfertDataToCloudDb {
     }
   }
 
-  // ── Transfert uniquement les non synchronisées ────────────────────────────
+  // ── Transfert en arrière-plan (même si on change d'onglet) ───────────────
 
   Future<void> transferAll() async {
+    // Évite les appels multiples simultanés
+    if (_isRunning) return;
+    _isRunning = true;
+
     try {
-      // Vérifie que le serveur est disponible avant de commencer
+      // 1. Vérifie le serveur avant tout
       final serverOk = await checkServerHealth();
       if (!serverOk) {
-        onError?.call('Serveur FastAPI indisponible');
+        onError?.call('Serveur indisponible. Réessayez plus tard.');
         return;
       }
 
       final db = CreateTableTemoin.db;
 
-      // Récupère uniquement les collectes non synchronisées
+      // 2. Récupère uniquement les collectes non synchronisées
       final collectes = await db.query(
         'collect_info_from_temoin',
         where: 'synced = ?',
@@ -138,35 +143,49 @@ class TransfertDataToCloudDb {
                 )
               : <String, Object?>{};
 
-          // Envoie vers FastAPI /mobile/transfert/cloud/sync
-          await _uploadCollecte(collecte: collecte, temoin: temoin);
-
-          // Marque comme synchronisé dans la DB locale
-          await db.update(
-            'collect_info_from_temoin',
-            {'synced': 1},
-            where:     'id = ?',
-            whereArgs: [collectId],
+          // Envoie vers FastAPI et attend la réponse
+          final success = await _uploadCollecte(
+            collecte: collecte,
+            temoin: temoin,
           );
 
-          onItemStatus?.call(label, 'done');
+          if (success) {
+            // Marque comme synchronisé dans la DB locale
+            await db.update(
+              'collect_info_from_temoin',
+              {'synced': 1},
+              where:     'id = ?',
+              whereArgs: [collectId],
+            );
+            onItemStatus?.call(label, 'done');
+          } else {
+            onItemStatus?.call(label, 'error');
+          }
+
           done++;
           onProgress?.call(done, collectes.length);
 
         } catch (e) {
           onItemStatus?.call(label, 'error');
+          done++;
+          onProgress?.call(done, collectes.length);
         }
       }
 
       onComplete?.call();
+
     } catch (e) {
       onError?.call(e.toString());
+    } finally {
+      // Toujours libérer le verrou
+      _isRunning = false;
     }
   }
 
   // ── Upload vers FastAPI /mobile/transfert/cloud/sync ──────────────────────
+  // Retourne true si le serveur confirme le succès, false sinon
 
-  Future<void> _uploadCollecte({
+  Future<bool> _uploadCollecte({
     required Map<String, dynamic> collecte,
     required Map<String, dynamic> temoin,
   }) async {
@@ -199,14 +218,17 @@ class TransfertDataToCloudDb {
     }
 
     final streamed = await request.send().timeout(
-      const Duration(seconds: 30),
+      const Duration(seconds: 60),
       onTimeout: () => throw Exception('Timeout connexion FastAPI'),
     );
     final response = await http.Response.fromStream(streamed);
 
-    if (response.statusCode != 200) {
+    if (response.statusCode == 200) {
       final body = jsonDecode(response.body);
-      throw Exception('Erreur ${response.statusCode}: ${body['detail'] ?? response.body}');
+      // Vérifie la réponse du backend
+      return body['success'] == true;
     }
+
+    return false;
   }
 }
