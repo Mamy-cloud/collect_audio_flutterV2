@@ -5,7 +5,7 @@ import 'package:flutter/material.dart';
 import 'package:go_router/go_router.dart';
 import '../../../services/session_service.dart';
 
-class SessionDeconnexion {
+/* class SessionDeconnexion {
 
   /// Déconnecte l'utilisateur et redirige vers /login
   static Future<void> logout(BuildContext context) async {
@@ -44,6 +44,40 @@ class SessionDeconnexion {
             onPressed: () => Navigator.of(dialogCtx).pop(true),
             child: const Text('Se déconnecter',
                 style: TextStyle(color: Color(0xFFE53935))),
+          ),
+        ],
+      ),
+    );
+
+    if (confirmed == true && context.mounted) {
+      await logout(context);
+    }
+  }
+} */
+class SessionDeconnexion {
+
+  static Future<void> logout(BuildContext context) async {
+    await SessionService.logout();
+
+    if (context.mounted) {
+      context.go('/login');
+    }
+  }
+
+  static Future<void> logoutWithConfirm(BuildContext context) async {
+    final confirmed = await showDialog<bool>(
+      context: context,
+      builder: (dialogCtx) => AlertDialog(
+        title: const Text('Se déconnecter'),
+        content: const Text('Voulez-vous vraiment vous déconnecter ?'),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.pop(dialogCtx, false),
+            child: const Text('Annuler'),
+          ),
+          TextButton(
+            onPressed: () => Navigator.pop(dialogCtx, true),
+            child: const Text('Déconnecter'),
           ),
         ],
       ),

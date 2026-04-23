@@ -1,4 +1,4 @@
-// session_service.dart
+/* // session_service.dart
 // Gestion de l'utilisateur connecté en mémoire + persistance SQLite
 
 import '../database/create_table/create_table_temoin.dart';
@@ -36,6 +36,51 @@ class SessionService {
 
     _currentUserId      = user['id']          as String;
     _currentIdentifiant = user['identifiant'] as String;
+    return true;
+  }
+}
+ */
+// session_service.dart
+
+import '../database/create_table/create_table_temoin.dart';
+
+class SessionService {
+  static String? _currentUserId;
+  static String? _currentIdentifiant;
+
+  static String? get currentUserId => _currentUserId;
+  static String? get currentIdentifiant => _currentIdentifiant;
+
+  static bool get isLoggedIn => _currentUserId != null;
+
+  // ─── LOGIN ─────────────────────────────────────────────
+
+  static Future<void> login(String userId, String identifiant) async {
+    _currentUserId = userId;
+    _currentIdentifiant = identifiant;
+
+    await CreateTableTemoin.updateLastLogin(userId);
+  }
+
+  // ─── LOGOUT (IMPORTANT FIX) ────────────────────────────
+
+  static Future<void> logout() async {
+    _currentUserId = null;
+    _currentIdentifiant = null;
+
+    // 🔥 SUPPRESSION de la session persistée SQLite
+    await CreateTableTemoin.clearLastLogin();
+  }
+
+  // ─── RESTORE SESSION (UNIQUEMENT SPLASH) ──────────────
+
+  static Future<bool> restoreSession() async {
+    final user = await CreateTableTemoin.getLastLoggedUser();
+    if (user == null) return false;
+
+    _currentUserId = user['id'] as String;
+    _currentIdentifiant = user['identifiant'] as String;
+
     return true;
   }
 }
