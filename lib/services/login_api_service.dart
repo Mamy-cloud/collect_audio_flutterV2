@@ -31,7 +31,7 @@ class LoginApiService {
     try {
       final response = await http
           .get(Uri.parse(ApiConfig.statusLogin))
-          .timeout(const Duration(seconds: 10));
+          .timeout(const Duration(seconds: 100));
 
       if (response.statusCode == 200) {
         final body = jsonDecode(response.body);
