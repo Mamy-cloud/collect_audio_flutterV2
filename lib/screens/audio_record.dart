@@ -39,6 +39,13 @@ class _AudioRecordSheetState extends State<AudioRecordSheet> {
   double _maxDbObserved = 0.0;
   bool   _calibrated    = false;
 
+  // ── DEBUG ─────────────────────────────────────────────────────────────────
+  double? _debugRawDb;
+  double  _debugNormalized = 0.0;
+  double  _debugSmoothed   = 0.0;
+  int     _debugEventCount = 0;
+  String  _debugStatus     = 'En attente...';
+
   // ── Appareils audio ────────────────────────────────────────────────────────
   List<AudioDevice> _devices       = [];
   AudioDevice?      _selectedDevice;
@@ -54,7 +61,14 @@ class _AudioRecordSheetState extends State<AudioRecordSheet> {
     _recorderSub = _recorder.onProgress!.listen((event) {
       if (!mounted) return;
 
+      _debugEventCount++;
       final rawDb = event.decibels;
+
+      setState(() {
+        _debugRawDb  = rawDb;
+        _debugStatus = rawDb == null ? '⚠️ NULL' : '✅ OK';
+      });
+
       if (rawDb == null) return;
 
       final db = rawDb.toDouble();
@@ -79,7 +93,11 @@ class _AudioRecordSheetState extends State<AudioRecordSheet> {
       if (normalized < 0.15) {
         final smoothed = _lastAmp * 0.1;
         _lastAmp = smoothed;
-        setState(() => _waveData.add(smoothed));
+        setState(() {
+          _waveData.add(smoothed);
+          _debugNormalized = 0.0;
+          _debugSmoothed   = smoothed;
+        });
         return;
       }
 
@@ -96,7 +114,11 @@ class _AudioRecordSheetState extends State<AudioRecordSheet> {
       final double smoothed = _lastAmp * (1 - alpha) + normalized * alpha;
 
       _lastAmp = smoothed;
-      setState(() => _waveData.add(smoothed));
+      setState(() {
+        _waveData.add(smoothed);
+        _debugNormalized = normalized;
+        _debugSmoothed   = smoothed;
+      });
     });
   }
 
@@ -201,9 +223,14 @@ class _AudioRecordSheetState extends State<AudioRecordSheet> {
     _lastAmp    = 0.0;
     _calibrated = false;
     setState(() {
-      _status    = _Status.idle;
-      _elapsed   = Duration.zero;
-      _finalPath = null;
+      _status          = _Status.idle;
+      _elapsed         = Duration.zero;
+      _finalPath       = null;
+      _debugRawDb      = null;
+      _debugNormalized = 0.0;
+      _debugSmoothed   = 0.0;
+      _debugEventCount = 0;
+      _debugStatus     = 'En attente...';
       _waveData.clear();
     });
   }
@@ -259,6 +286,8 @@ class _AudioRecordSheetState extends State<AudioRecordSheet> {
             _buildDeviceSelector(),
             const SizedBox(height: 20),
             _buildMagnetophone(),
+            const SizedBox(height: 12),
+            _buildDebugPanel(),
             const SizedBox(height: 24),
 
             if (_status == _Status.idle)
@@ -321,6 +350,72 @@ class _AudioRecordSheetState extends State<AudioRecordSheet> {
             ],
           ],
         ),
+      ),
+    );
+  }
+
+  Widget _buildDebugPanel() {
+    return Container(
+      width: double.infinity,
+      padding: const EdgeInsets.all(12),
+      decoration: BoxDecoration(
+        color:        const Color(0xFF0D1117),
+        borderRadius: BorderRadius.circular(10),
+        border:       Border.all(color: const Color(0xFF30363D)),
+      ),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          const Row(
+            children: [
+              Icon(Icons.bug_report, size: 14, color: Color(0xFF58A6FF)),
+              SizedBox(width: 6),
+              Text('DEBUG — Amplitude micro',
+                style: TextStyle(fontSize: 11, color: Color(0xFF58A6FF),
+                    fontWeight: FontWeight.w600)),
+            ],
+          ),
+          const SizedBox(height: 8),
+          _debugRow('Status',       _debugStatus),
+          _debugRow('Events reçus', '$_debugEventCount'),
+          _debugRow('Raw dB',
+            _debugRawDb == null ? 'null ⚠️' : _debugRawDb!.toStringAsFixed(2)),
+          _debugRow('Min dB obs.',  _calibrated ? _minDbObserved.toStringAsFixed(2) : '-'),
+          _debugRow('Max dB obs.',  _calibrated ? _maxDbObserved.toStringAsFixed(2) : '-'),
+          _debugRow('Normalized',   _debugNormalized.toStringAsFixed(3)),
+          _debugRow('Smoothed',     _debugSmoothed.toStringAsFixed(3)),
+          _debugRow('Bars total',   '${_waveData.length}'),
+          const SizedBox(height: 6),
+          ClipRRect(
+            borderRadius: BorderRadius.circular(3),
+            child: LinearProgressIndicator(
+              value:           _debugSmoothed.clamp(0.0, 1.0),
+              backgroundColor: const Color(0xFF21262D),
+              valueColor:      AlwaysStoppedAnimation<Color>(
+                _debugSmoothed > 0.01
+                    ? const Color(0xFF3FB950)
+                    : const Color(0xFF30363D),
+              ),
+              minHeight: 6,
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+
+  Widget _debugRow(String label, String value) {
+    return Padding(
+      padding: const EdgeInsets.symmetric(vertical: 1.5),
+      child: Row(
+        mainAxisAlignment: MainAxisAlignment.spaceBetween,
+        children: [
+          Text(label,
+            style: const TextStyle(fontSize: 11, color: Color(0xFF8B949E))),
+          Text(value,
+            style: const TextStyle(fontSize: 11, color: Color(0xFFE6EDF3),
+                fontFamily: 'monospace')),
+        ],
       ),
     );
   }
