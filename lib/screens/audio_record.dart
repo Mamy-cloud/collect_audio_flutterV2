@@ -35,16 +35,9 @@ class _AudioRecordSheetState extends State<AudioRecordSheet> {
   StreamSubscription? _recorderSub;
 
   // ── Calibration dynamique ─────────────────────────────────────────────────
-  double _minDbObserved = -10.0;
-  double _maxDbObserved = -10.0;
+  double _minDbObserved = 0.0;
+  double _maxDbObserved = 0.0;
   bool   _calibrated    = false;
-
-  // ── DEBUG — valeurs affichées dans le widget ──────────────────────────────
-  double? _debugRawDb;
-  double  _debugNormalized = 0.0;
-  double  _debugSmoothed   = 0.0;
-  int     _debugEventCount = 0;
-  String  _debugStatus     = 'En attente...';
 
   // ── Appareils audio ────────────────────────────────────────────────────────
   List<AudioDevice> _devices       = [];
@@ -58,40 +51,15 @@ class _AudioRecordSheetState extends State<AudioRecordSheet> {
   }
 
   void _startAmplitudeListener() {
-    _debugStatus     = 'Listener démarré';
-    _debugEventCount = 0;
-
     _recorderSub = _recorder.onProgress!.listen((event) {
       if (!mounted) return;
 
-      _debugEventCount++;
       final rawDb = event.decibels;
-
-      // ── Mise à jour debug ────────────────────────────────────────────────
-      setState(() {
-        _debugRawDb  = rawDb;
-        _debugStatus = rawDb == null
-            ? '⚠️ decibels = NULL'
-            : '✅ decibels reçus';
-      });
-
       if (rawDb == null) return;
 
       final db = rawDb.toDouble();
 
-      // 1. Seuil silence
-      if (db < -35.0) {
-        final smoothed = _lastAmp * 0.1;
-        _lastAmp = smoothed;
-        setState(() {
-          _waveData.add(smoothed);
-          _debugNormalized = 0.0;
-          _debugSmoothed   = smoothed;
-        });
-        return;
-      }
-
-      // 2. Calibration dynamique
+      // ── Calibration dynamique ─────────────────────────────────────────
       if (!_calibrated) {
         _minDbObserved = db;
         _maxDbObserved = db;
@@ -102,30 +70,33 @@ class _AudioRecordSheetState extends State<AudioRecordSheet> {
       }
 
       final range          = (_maxDbObserved - _minDbObserved).abs();
-      final effectiveRange = range < 20.0 ? 20.0 : range;
-      final effectiveMin   = _maxDbObserved - effectiveRange;
+      final effectiveRange = range < 15.0 ? 15.0 : range;
+      final effectiveMin   = _minDbObserved;
 
       double normalized = ((db - effectiveMin) / effectiveRange).clamp(0.0, 1.0);
 
-      // 3. Zone morte
-      if (normalized < 0.08) normalized = 0.0;
+      // ── Seuil silence ─────────────────────────────────────────────────
+      if (normalized < 0.15) {
+        final smoothed = _lastAmp * 0.1;
+        _lastAmp = smoothed;
+        setState(() => _waveData.add(smoothed));
+        return;
+      }
 
-      // 4. Boost voix
+      // ── Zone morte ────────────────────────────────────────────────────
+      if (normalized < 0.20) normalized = 0.0;
+
+      // ── Boost voix ────────────────────────────────────────────────────
       if (normalized > 0.0) {
         normalized = pow(normalized, 0.6).toDouble();
       }
 
-      // 5. Lissage asymétrique
+      // ── Lissage asymétrique ───────────────────────────────────────────
       final double alpha    = normalized > _lastAmp ? 0.8 : 0.15;
       final double smoothed = _lastAmp * (1 - alpha) + normalized * alpha;
 
       _lastAmp = smoothed;
-
-      setState(() {
-        _waveData.add(smoothed);
-        _debugNormalized = normalized;
-        _debugSmoothed   = smoothed;
-      });
+      setState(() => _waveData.add(smoothed));
     });
   }
 
@@ -170,8 +141,8 @@ class _AudioRecordSheetState extends State<AudioRecordSheet> {
     _elapsed       = Duration.zero;
     _lastAmp       = 0.0;
     _calibrated    = false;
-    _minDbObserved = -10.0;
-    _maxDbObserved = -10.0;
+    _minDbObserved = 0.0;
+    _maxDbObserved = 0.0;
     _waveData.clear();
     _finalPath = await _newPath();
 
@@ -230,14 +201,9 @@ class _AudioRecordSheetState extends State<AudioRecordSheet> {
     _lastAmp    = 0.0;
     _calibrated = false;
     setState(() {
-      _status          = _Status.idle;
-      _elapsed         = Duration.zero;
-      _finalPath       = null;
-      _debugRawDb      = null;
-      _debugNormalized = 0.0;
-      _debugSmoothed   = 0.0;
-      _debugEventCount = 0;
-      _debugStatus     = 'En attente...';
+      _status    = _Status.idle;
+      _elapsed   = Duration.zero;
+      _finalPath = null;
       _waveData.clear();
     });
   }
@@ -266,187 +232,95 @@ class _AudioRecordSheetState extends State<AudioRecordSheet> {
         borderRadius: BorderRadius.vertical(top: Radius.circular(20)),
       ),
       padding: const EdgeInsets.fromLTRB(24, 20, 24, 40),
-      child: Column(
-        mainAxisSize: MainAxisSize.min,
-        children: [
-          Center(
-            child: Container(
-              width: 40, height: 4,
-              margin: const EdgeInsets.only(bottom: 24),
-              decoration: BoxDecoration(
-                color: Colors.white24,
-                borderRadius: BorderRadius.circular(2),
+      child: SingleChildScrollView(
+        child: Column(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            Center(
+              child: Container(
+                width: 40, height: 4,
+                margin: const EdgeInsets.only(bottom: 24),
+                decoration: BoxDecoration(
+                  color: Colors.white24,
+                  borderRadius: BorderRadius.circular(2),
+                ),
               ),
             ),
-          ),
 
-          const Text(
-            'Témoignage oral',
-            style: TextStyle(
-              fontSize: 18, fontWeight: FontWeight.w700,
-              color: AppColors.textPrimary,
-            ),
-          ),
-
-          const SizedBox(height: 20),
-          _buildDeviceSelector(),
-          const SizedBox(height: 20),
-          _buildMagnetophone(),
-          const SizedBox(height: 12),
-
-          // ── Widget DEBUG ─────────────────────────────────────────────────
-          _buildDebugPanel(),
-
-          const SizedBox(height: 24),
-
-          if (_status == _Status.idle)
-            _CtrlButton(
-              icon:  Icons.fiber_manual_record,
-              label: "Démarrer l'enregistrement",
-              color: const Color(0xFFE53935),
-              onTap: _startRecording,
-            ),
-
-          if (_status == _Status.recording) ...[
-            _CtrlButton(
-              icon:  Icons.pause,
-              label: 'Pause',
-              color: AppColors.textMuted,
-              onTap: _pauseRecording,
-            ),
-            const SizedBox(height: 12),
-            _CtrlButton(
-              icon:  Icons.stop,
-              label: 'Arrêter',
-              color: const Color(0xFFE53935),
-              onTap: _stopRecording,
-            ),
-          ],
-
-          if (_status == _Status.paused) ...[
-            _CtrlButton(
-              icon:  Icons.play_arrow,
-              label: 'Reprendre',
-              color: AppColors.textPrimary,
-              onTap: _resumeRecording,
-            ),
-            const SizedBox(height: 12),
-            _CtrlButton(
-              icon:  Icons.stop,
-              label: 'Arrêter',
-              color: const Color(0xFFE53935),
-              onTap: _stopRecording,
-            ),
-          ],
-
-          if (_status == _Status.done) ...[
-            _CtrlButton(
-              icon:   Icons.save_alt,
-              label:  'Enregistrer le témoignage',
-              color:  AppColors.textPrimary,
-              onTap:  _saveTestimony,
-              filled: true,
-            ),
-            const SizedBox(height: 12),
-            TextButton.icon(
-              onPressed: _reset,
-              icon:  const Icon(Icons.refresh, size: 16, color: AppColors.textMuted),
-              label: const Text(
-                'Recommencer',
-                style: TextStyle(color: AppColors.textMuted, fontSize: 13),
+            const Text(
+              'Témoignage oral',
+              style: TextStyle(
+                fontSize: 18, fontWeight: FontWeight.w700,
+                color: AppColors.textPrimary,
               ),
             ),
-          ],
-        ],
-      ),
-    );
-  }
 
-  // ── Panneau de debug visible sur le téléphone ─────────────────────────────
+            const SizedBox(height: 20),
+            _buildDeviceSelector(),
+            const SizedBox(height: 20),
+            _buildMagnetophone(),
+            const SizedBox(height: 24),
 
-  Widget _buildDebugPanel() {
-    return Container(
-      width: double.infinity,
-      padding: const EdgeInsets.all(12),
-      decoration: BoxDecoration(
-        color:        const Color(0xFF0D1117),
-        borderRadius: BorderRadius.circular(10),
-        border:       Border.all(color: const Color(0xFF30363D)),
-      ),
-      child: Column(
-        crossAxisAlignment: CrossAxisAlignment.start,
-        children: [
-          Row(
-            children: [
-              const Icon(Icons.bug_report, size: 14, color: Color(0xFF58A6FF)),
-              const SizedBox(width: 6),
-              Text(
-                'DEBUG — Amplitude micro',
-                style: TextStyle(
-                  fontSize: 11,
-                  color:    const Color(0xFF58A6FF),
-                  fontWeight: FontWeight.w600,
+            if (_status == _Status.idle)
+              _CtrlButton(
+                icon:  Icons.fiber_manual_record,
+                label: "Démarrer l'enregistrement",
+                color: const Color(0xFFE53935),
+                onTap: _startRecording,
+              ),
+
+            if (_status == _Status.recording) ...[
+              _CtrlButton(
+                icon:  Icons.pause,
+                label: 'Pause',
+                color: AppColors.textMuted,
+                onTap: _pauseRecording,
+              ),
+              const SizedBox(height: 12),
+              _CtrlButton(
+                icon:  Icons.stop,
+                label: 'Arrêter',
+                color: const Color(0xFFE53935),
+                onTap: _stopRecording,
+              ),
+            ],
+
+            if (_status == _Status.paused) ...[
+              _CtrlButton(
+                icon:  Icons.play_arrow,
+                label: 'Reprendre',
+                color: AppColors.textPrimary,
+                onTap: _resumeRecording,
+              ),
+              const SizedBox(height: 12),
+              _CtrlButton(
+                icon:  Icons.stop,
+                label: 'Arrêter',
+                color: const Color(0xFFE53935),
+                onTap: _stopRecording,
+              ),
+            ],
+
+            if (_status == _Status.done) ...[
+              _CtrlButton(
+                icon:   Icons.save_alt,
+                label:  'Enregistrer le témoignage',
+                color:  AppColors.textPrimary,
+                onTap:  _saveTestimony,
+                filled: true,
+              ),
+              const SizedBox(height: 12),
+              TextButton.icon(
+                onPressed: _reset,
+                icon:  const Icon(Icons.refresh, size: 16, color: AppColors.textMuted),
+                label: const Text(
+                  'Recommencer',
+                  style: TextStyle(color: AppColors.textMuted, fontSize: 13),
                 ),
               ),
             ],
-          ),
-          const SizedBox(height: 8),
-          _debugRow('Status',      _debugStatus),
-          _debugRow('Events reçus', '$_debugEventCount'),
-          _debugRow(
-            'Raw dB',
-            _debugRawDb == null
-                ? 'null ⚠️'
-                : _debugRawDb!.toStringAsFixed(2),
-          ),
-          _debugRow('Min dB obs.',  _calibrated ? _minDbObserved.toStringAsFixed(2) : '-'),
-          _debugRow('Max dB obs.',  _calibrated ? _maxDbObserved.toStringAsFixed(2) : '-'),
-          _debugRow('Normalized',  _debugNormalized.toStringAsFixed(3)),
-          _debugRow('Smoothed',    _debugSmoothed.toStringAsFixed(3)),
-          _debugRow('Bars total',  '${_waveData.length}'),
-
-          // Barre visuelle de l'amplitude actuelle
-          const SizedBox(height: 6),
-          ClipRRect(
-            borderRadius: BorderRadius.circular(3),
-            child: LinearProgressIndicator(
-              value:           _debugSmoothed.clamp(0.0, 1.0),
-              backgroundColor: const Color(0xFF21262D),
-              valueColor:      AlwaysStoppedAnimation<Color>(
-                _debugSmoothed > 0.01
-                    ? const Color(0xFF3FB950)
-                    : const Color(0xFF30363D),
-              ),
-              minHeight: 6,
-            ),
-          ),
-        ],
-      ),
-    );
-  }
-
-  Widget _debugRow(String label, String value) {
-    return Padding(
-      padding: const EdgeInsets.symmetric(vertical: 1.5),
-      child: Row(
-        mainAxisAlignment: MainAxisAlignment.spaceBetween,
-        children: [
-          Text(
-            label,
-            style: const TextStyle(
-              fontSize: 11,
-              color:    Color(0xFF8B949E),
-            ),
-          ),
-          Text(
-            value,
-            style: const TextStyle(
-              fontSize: 11,
-              color:    Color(0xFFE6EDF3),
-              fontFamily: 'monospace',
-            ),
-          ),
-        ],
+          ],
+        ),
       ),
     );
   }
@@ -476,21 +350,16 @@ class _AudioRecordSheetState extends State<AudioRecordSheet> {
               ),
             ),
           ),
-
           const SizedBox(height: 16),
-
           Text(
             _elapsedLabel,
             style: const TextStyle(
-              fontSize:     36,
-              fontWeight:   FontWeight.w300,
-              color:        AppColors.textPrimary,
+              fontSize: 36, fontWeight: FontWeight.w300,
+              color: AppColors.textPrimary,
               fontFeatures: [FontFeature.tabularFigures()],
             ),
           ),
-
           const SizedBox(height: 8),
-
           Row(
             mainAxisAlignment: MainAxisAlignment.center,
             children: [
@@ -499,17 +368,14 @@ class _AudioRecordSheetState extends State<AudioRecordSheet> {
                   width: 8, height: 8,
                   margin: const EdgeInsets.only(right: 6),
                   decoration: const BoxDecoration(
-                    color: Color(0xFFE53935),
-                    shape: BoxShape.circle,
+                    color: Color(0xFFE53935), shape: BoxShape.circle,
                   ),
                 ),
               Text(
                 _statusLabel(_status),
                 style: TextStyle(
                   fontSize: 12,
-                  color: isRecording
-                      ? const Color(0xFFE53935)
-                      : AppColors.textMuted,
+                  color: isRecording ? const Color(0xFFE53935) : AppColors.textMuted,
                 ),
               ),
             ],
@@ -532,14 +398,10 @@ class _AudioRecordSheetState extends State<AudioRecordSheet> {
     if (_loadingDevices) {
       return const SizedBox(
         height: 44,
-        child: Center(
-          child: SizedBox(
-            width: 16, height: 16,
-            child: CircularProgressIndicator(
-              strokeWidth: 2, color: AppColors.textMuted,
-            ),
-          ),
-        ),
+        child: Center(child: SizedBox(
+          width: 16, height: 16,
+          child: CircularProgressIndicator(strokeWidth: 2, color: AppColors.textMuted),
+        )),
       );
     }
     if (_devices.length <= 1) return const SizedBox.shrink();
@@ -547,9 +409,9 @@ class _AudioRecordSheetState extends State<AudioRecordSheet> {
     return Container(
       padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 4),
       decoration: BoxDecoration(
-        color:        AppColors.inputFill,
+        color: AppColors.inputFill,
         borderRadius: BorderRadius.circular(10),
-        border:       Border.all(color: const Color(0xFF333333)),
+        border: Border.all(color: const Color(0xFF333333)),
       ),
       child: Row(
         children: [
@@ -558,27 +420,22 @@ class _AudioRecordSheetState extends State<AudioRecordSheet> {
           Expanded(
             child: DropdownButtonHideUnderline(
               child: DropdownButton<AudioDevice>(
-                value:         _selectedDevice,
+                value: _selectedDevice,
                 dropdownColor: AppColors.inputFill,
-                style:         AppTextStyles.input.copyWith(fontSize: 14),
-                icon: const Icon(
-                  Icons.keyboard_arrow_down,
-                  color: AppColors.textMuted, size: 18,
-                ),
+                style: AppTextStyles.input.copyWith(fontSize: 14),
+                icon: const Icon(Icons.keyboard_arrow_down, color: AppColors.textMuted, size: 18),
                 isExpanded: true,
                 items: _devices.map((d) => DropdownMenuItem<AudioDevice>(
                   value: d,
                   child: Row(children: [
                     Icon(
-                      d.isUsb        ? Icons.usb_outlined
+                      d.isUsb ? Icons.usb_outlined
                           : d.isBluetooth ? Icons.bluetooth_outlined
                           : Icons.mic_outlined,
                       size: 14, color: AppColors.textMuted,
                     ),
                     const SizedBox(width: 8),
-                    Expanded(
-                      child: Text(d.name, overflow: TextOverflow.ellipsis),
-                    ),
+                    Expanded(child: Text(d.name, overflow: TextOverflow.ellipsis)),
                   ]),
                 )).toList(),
                 onChanged: _status == _Status.idle
@@ -615,81 +472,61 @@ class _WaveformPainter extends CustomPainter {
     final maxBars  = (size.width / barStep).floor();
 
     canvas.drawLine(
-      Offset(0, centerY),
-      Offset(size.width, centerY),
-      Paint()
-        ..color       = const Color(0xFF2A2A2A)
-        ..strokeWidth = 1,
+      Offset(0, centerY), Offset(size.width, centerY),
+      Paint()..color = const Color(0xFF2A2A2A)..strokeWidth = 1,
     );
 
     if (waveData.isEmpty) return;
 
     final visible = waveData.length > maxBars
-        ? waveData.sublist(waveData.length - maxBars)
-        : waveData;
+        ? waveData.sublist(waveData.length - maxBars) : waveData;
 
     final pastPaint = Paint()
-      ..color       = isRecording
+      ..color = isRecording
           ? const Color(0xFFE53935).withValues(alpha: 0.45)
-          : isPaused
-              ? const Color(0xFFE53935).withValues(alpha: 0.25)
-              : const Color(0xFF555555)
-      ..strokeWidth = barWidth
-      ..strokeCap   = StrokeCap.round;
+          : isPaused ? const Color(0xFFE53935).withValues(alpha: 0.25)
+          : const Color(0xFF555555)
+      ..strokeWidth = barWidth..strokeCap = StrokeCap.round;
 
     final activePaint = Paint()
-      ..color       = isRecording
-          ? const Color(0xFFE53935)
-          : isPaused
-              ? const Color(0xFFE53935).withValues(alpha: 0.6)
-              : const Color(0xFF777777)
-      ..strokeWidth = barWidth
-      ..strokeCap   = StrokeCap.round;
+      ..color = isRecording ? const Color(0xFFE53935)
+          : isPaused ? const Color(0xFFE53935).withValues(alpha: 0.6)
+          : const Color(0xFF777777)
+      ..strokeWidth = barWidth..strokeCap = StrokeCap.round;
 
     final futurePaint = Paint()
-      ..color       = const Color(0xFF2E2E2E)
-      ..strokeWidth = barWidth
-      ..strokeCap   = StrokeCap.round;
+      ..color = const Color(0xFF2E2E2E)
+      ..strokeWidth = barWidth..strokeCap = StrokeCap.round;
 
     for (int i = 0; i < visible.length; i++) {
-      final amp      = visible[i];
-      final barH     = amp < 0.01 ? 1.5 : max(2.0, amp * size.height * 0.9);
-      final xPos     = i * barStep + barWidth / 2;
-      final isActive = i == visible.length - 1;
-
+      final amp  = visible[i];
+      final barH = amp < 0.01 ? 1.5 : max(2.0, amp * size.height * 0.9);
+      final xPos = i * barStep + barWidth / 2;
       canvas.drawLine(
         Offset(xPos, centerY - barH / 2),
         Offset(xPos, centerY + barH / 2),
-        isActive ? activePaint : pastPaint,
+        i == visible.length - 1 ? activePaint : pastPaint,
       );
     }
 
     for (int i = visible.length; i < maxBars; i++) {
       final xPos = i * barStep + barWidth / 2;
       canvas.drawLine(
-        Offset(xPos, centerY - 2),
-        Offset(xPos, centerY + 2),
-        futurePaint,
+        Offset(xPos, centerY - 2), Offset(xPos, centerY + 2), futurePaint,
       );
     }
 
     if (isRecording || isPaused) {
       final cx = (visible.length * barStep).clamp(0.0, size.width).toDouble();
-      canvas.drawLine(
-        Offset(cx, 0),
-        Offset(cx, size.height),
-        Paint()
-          ..color       = const Color(0xFFFF5252)
-          ..strokeWidth = 1.5,
-      );
+      canvas.drawLine(Offset(cx, 0), Offset(cx, size.height),
+        Paint()..color = const Color(0xFFFF5252)..strokeWidth = 1.5);
     }
   }
 
   @override
   bool shouldRepaint(_WaveformPainter old) =>
       old.waveData.length != waveData.length ||
-      old.isRecording     != isRecording     ||
-      old.isPaused        != isPaused;
+      old.isRecording != isRecording || old.isPaused != isPaused;
 }
 
 // ── Waveform statique pour la lecture ─────────────────────────────────────────
@@ -700,10 +537,8 @@ class WaveformDisplay extends StatelessWidget {
   final bool         isPlaying;
 
   const WaveformDisplay({
-    super.key,
-    required this.waveData,
-    required this.progress,
-    required this.isPlaying,
+    super.key, required this.waveData,
+    required this.progress, required this.isPlaying,
   });
 
   @override
@@ -712,9 +547,7 @@ class WaveformDisplay extends StatelessWidget {
       height: 40,
       child: CustomPaint(
         painter: _WaveformPlaybackPainter(
-          waveData:  waveData,
-          progress:  progress,
-          isPlaying: isPlaying,
+          waveData: waveData, progress: progress, isPlaying: isPlaying,
         ),
         child: const SizedBox.expand(),
       ),
@@ -728,9 +561,7 @@ class _WaveformPlaybackPainter extends CustomPainter {
   final bool         isPlaying;
 
   const _WaveformPlaybackPainter({
-    required this.waveData,
-    required this.progress,
-    required this.isPlaying,
+    required this.waveData, required this.progress, required this.isPlaying,
   });
 
   @override
@@ -741,8 +572,7 @@ class _WaveformPlaybackPainter extends CustomPainter {
     final maxBars  = (size.width / barStep).floor();
     final centerY  = size.height / 2;
 
-    final data = waveData.isNotEmpty
-        ? waveData
+    final data = waveData.isNotEmpty ? waveData
         : List.generate(maxBars, (i) {
             final x = i / maxBars;
             return 0.3 + 0.5 * sin(x * pi * 6) * sin(x * pi);
@@ -755,43 +585,28 @@ class _WaveformPlaybackPainter extends CustomPainter {
       final x    = i * barStep + barWidth / 2;
       final amp  = visible[i];
       final barH = amp < 0.01 ? 1.5 : max(2.0, amp * size.height * 0.9);
-      final done = x <= progressX;
-
       canvas.drawLine(
-        Offset(x, centerY - barH / 2),
-        Offset(x, centerY + barH / 2),
+        Offset(x, centerY - barH / 2), Offset(x, centerY + barH / 2),
         Paint()
-          ..color       = done
-              ? const Color(0xFFE53935)
-              : const Color(0xFF444444)
-          ..strokeWidth = barWidth
-          ..strokeCap   = StrokeCap.round,
+          ..color = x <= progressX ? const Color(0xFFE53935) : const Color(0xFF444444)
+          ..strokeWidth = barWidth..strokeCap = StrokeCap.round,
       );
     }
   }
 
   @override
   bool shouldRepaint(_WaveformPlaybackPainter old) =>
-      old.progress        != progress  ||
-      old.isPlaying       != isPlaying ||
+      old.progress != progress || old.isPlaying != isPlaying ||
       old.waveData.length != waveData.length;
 }
 
-// ── Bouton de contrôle ────────────────────────────────────────────────────────
-
 class _CtrlButton extends StatelessWidget {
-  final IconData     icon;
-  final String       label;
-  final Color        color;
-  final VoidCallback onTap;
-  final bool         filled;
+  final IconData icon; final String label;
+  final Color color; final VoidCallback onTap; final bool filled;
 
   const _CtrlButton({
-    required this.icon,
-    required this.label,
-    required this.color,
-    required this.onTap,
-    this.filled = false,
+    required this.icon, required this.label,
+    required this.color, required this.onTap, this.filled = false,
   });
 
   @override
@@ -803,15 +618,11 @@ class _CtrlButton extends StatelessWidget {
         style: OutlinedButton.styleFrom(
           backgroundColor: filled ? color : Colors.transparent,
           foregroundColor: filled ? AppColors.background : color,
-          side: BorderSide(
-            color: filled ? color : const Color(0xFF444444),
-          ),
+          side: BorderSide(color: filled ? color : const Color(0xFF444444)),
           padding: const EdgeInsets.symmetric(vertical: 14),
-          shape: RoundedRectangleBorder(
-            borderRadius: BorderRadius.circular(10),
-          ),
+          shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(10)),
         ),
-        icon:  Icon(icon, size: 18),
+        icon: Icon(icon, size: 18),
         label: Text(label, style: const TextStyle(fontSize: 14)),
       ),
     );
