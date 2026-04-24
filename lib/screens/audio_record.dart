@@ -432,14 +432,14 @@ class _WaveformPainter extends CustomPainter {
     for (int i = 0; i < visible.length; i++) {
       final amp  = visible[i];
       final x    = i * step + barW / 2;
-      final h    = amp < 0.01 ? 2.0 : max(2.0, amp * size.height * 0.48);
+      final h    = amp < 0.01 ? 0.0 : max(2.0, amp * size.height * 0.48);
 
-      // Barre symétrique haut et bas
-      canvas.drawLine(
-        Offset(x, centerY - h),
-        Offset(x, centerY + h),
-        paint,
-      );
+      if (h == 0.0) {
+        // silence → point sur la ligne centrale
+        canvas.drawCircle(Offset(x, centerY), 0.8, paint);
+      } else {
+        canvas.drawLine(Offset(x, centerY - h), Offset(x, centerY + h), paint);
+      }
     }
 
     // Curseur
@@ -512,17 +512,19 @@ class _WaveformPlaybackPainter extends CustomPainter {
     for (int i = 0; i < visible.length; i++) {
       final amp   = visible[i];
       final x     = i * step + barW / 2;
-      final h     = amp < 0.01 ? 2.0 : max(2.0, amp * size.height * 0.48);
+      final h     = amp < 0.01 ? 0.0 : max(2.0, amp * size.height * 0.48);
       final done  = x <= progressX;
 
-      canvas.drawLine(
-        Offset(x, centerY - h),
-        Offset(x, centerY + h),
-        Paint()
-          ..color       = done ? const Color(0xFFE53935) : const Color(0xFF3A3A3A)
-          ..strokeWidth = barW
-          ..strokeCap   = StrokeCap.butt,
-      );
+      final p = Paint()
+        ..color       = done ? const Color(0xFFE53935) : const Color(0xFF3A3A3A)
+        ..strokeWidth = barW
+        ..strokeCap   = StrokeCap.butt;
+
+      if (h == 0.0) {
+        canvas.drawCircle(Offset(x, centerY), 0.8, p);
+      } else {
+        canvas.drawLine(Offset(x, centerY - h), Offset(x, centerY + h), p);
+      }
     }
   }
 
