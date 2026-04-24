@@ -14,7 +14,8 @@ class ApiConfig {
   static const String postLogin   = '$baseUrl/mobile/verif/login/post/mobile';
 
   // ─── Transfert cloud ───────────────────────────────────────────────────────
-  static const String healthCloud  = '$baseUrl/mobile/transfert/cloud/health';
-  static const String syncCloud    = '$baseUrl/mobile/transfert/cloud/sync';
-  static const String collectes    = '$baseUrl/mobile/transfert/cloud/collectes';
+  static const String healthCloud = '$baseUrl/mobile/transfert/cloud/health';
+  static const String checkIds    = '$baseUrl/mobile/transfert/cloud/check/ids';
+  static const String syncCloud   = '$baseUrl/mobile/transfert/cloud/sync';
+  static const String collectes   = '$baseUrl/mobile/transfert/cloud/collectes';
 }

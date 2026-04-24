@@ -1,6 +1,6 @@
 // audio_record.dart — VERSION ANDROID/iOS
 // flutter_sound pour l'enregistrement
-// Waveform qui s'accumule de gauche à droite
+// Waveform basé sur la vraie amplitude du microphone
 
 import 'dart:async';
 import 'dart:io';
@@ -22,17 +22,17 @@ class AudioRecordSheet extends StatefulWidget {
 }
 
 class _AudioRecordSheetState extends State<AudioRecordSheet> {
-  _Status               _status       = _Status.idle;
-  Duration              _elapsed      = Duration.zero;
-  Timer?                _timer;
-  String?               _finalPath;
-  final FlutterSoundRecorder _recorder = FlutterSoundRecorder();
-  bool                  _recorderOpen = false;
+  _Status                    _status       = _Status.idle;
+  Duration                   _elapsed      = Duration.zero;
+  Timer?                     _timer;
+  String?                    _finalPath;
+  final FlutterSoundRecorder _recorder     = FlutterSoundRecorder();
+  bool                       _recorderOpen = false;
 
-  // ── Waveform accumulé ──────────────────────────────────────────────────────
-  final List<double> _waveData  = [];   // barres enregistrées
-  Timer?             _waveTimer;
-  final _random = Random();
+  // ── Waveform basé sur amplitude réelle ────────────────────────────────────
+  final List<double> _waveData    = [];
+  double             _lastAmp     = 0.0;   // dernière amplitude lissée
+  StreamSubscription? _recorderSub;
 
   // ── Appareils audio ────────────────────────────────────────────────────────
   List<AudioDevice> _devices       = [];
@@ -45,19 +45,34 @@ class _AudioRecordSheetState extends State<AudioRecordSheet> {
     _loadDevices();
   }
 
-  void _startWaveAccumulation() {
-    _waveTimer = Timer.periodic(const Duration(milliseconds: 150), (_) {
+  // ── Abonne au flux d'amplitude réel de flutter_sound ──────────────────────
+
+  void _startAmplitudeListener() {
+    // flutter_sound émet onProgress toutes les ~100ms avec decibels
+    _recorderSub = _recorder.onProgress!.listen((event) {
       if (!mounted) return;
-      // Amplitude avec lissage : moyenne pondérée de la barre précédente
-      final prev = _waveData.isNotEmpty ? _waveData.last : 0.5;
-      final raw  = 0.15 + _random.nextDouble() * 0.85;
-      final amp  = prev * 0.4 + raw * 0.6;   // lissage
-      setState(() => _waveData.add(amp));
+
+      final db = event.decibels ?? -60.0;
+
+      // Convertit dB → amplitude normalisée 0.0..1.0
+      // Plage typique micro : -60 dB (silence) → 0 dB (saturation)
+      const double minDb = -60.0;
+      const double maxDb =   0.0;
+      final double normalized = ((db - minDb) / (maxDb - minDb)).clamp(0.0, 1.0);
+
+      // Lissage exponentiel : réagit vite à la montée, descend doucement
+      final double alpha = normalized > _lastAmp ? 0.7 : 0.25;
+      final double smoothed = _lastAmp * (1 - alpha) + normalized * alpha;
+
+      _lastAmp = smoothed;
+
+      setState(() => _waveData.add(smoothed));
     });
   }
 
-  void _stopWaveAccumulation() {
-    _waveTimer?.cancel();
+  void _stopAmplitudeListener() {
+    _recorderSub?.cancel();
+    _recorderSub = null;
   }
 
   Future<void> _loadDevices() async {
@@ -76,19 +91,26 @@ class _AudioRecordSheetState extends State<AudioRecordSheet> {
       final status = await Permission.microphone.request();
       if (!status.isGranted) throw Exception('Permission microphone refusée');
       await _recorder.openRecorder();
+      // Active le flux d'amplitude toutes les 100ms
+      await _recorder.setSubscriptionDuration(
+        const Duration(milliseconds: 100),
+      );
       _recorderOpen = true;
     }
   }
 
   Future<String> _newPath() async {
     final dir = await getApplicationDocumentsDirectory();
-    return p.join(dir.path,
-        'temoignage_${DateTime.now().millisecondsSinceEpoch}.aac');
+    return p.join(
+      dir.path,
+      'temoignage_${DateTime.now().millisecondsSinceEpoch}.aac',
+    );
   }
 
   Future<void> _startRecording() async {
     await _openRecorder();
-    _elapsed   = Duration.zero;
+    _elapsed  = Duration.zero;
+    _lastAmp  = 0.0;
     _waveData.clear();
     _finalPath = await _newPath();
 
@@ -100,13 +122,14 @@ class _AudioRecordSheetState extends State<AudioRecordSheet> {
     _timer = Timer.periodic(const Duration(seconds: 1), (_) {
       setState(() => _elapsed += const Duration(seconds: 1));
     });
-    _startWaveAccumulation();
+
+    _startAmplitudeListener();
     setState(() => _status = _Status.recording);
   }
 
   Future<void> _pauseRecording() async {
     _timer?.cancel();
-    _stopWaveAccumulation();
+    _stopAmplitudeListener();
     await _recorder.pauseRecorder();
     setState(() => _status = _Status.paused);
   }
@@ -116,13 +139,13 @@ class _AudioRecordSheetState extends State<AudioRecordSheet> {
     _timer = Timer.periodic(const Duration(seconds: 1), (_) {
       setState(() => _elapsed += const Duration(seconds: 1));
     });
-    _startWaveAccumulation();
+    _startAmplitudeListener();
     setState(() => _status = _Status.recording);
   }
 
   Future<void> _stopRecording() async {
     _timer?.cancel();
-    _stopWaveAccumulation();
+    _stopAmplitudeListener();
     await _recorder.stopRecorder();
     setState(() => _status = _Status.done);
   }
@@ -136,10 +159,11 @@ class _AudioRecordSheetState extends State<AudioRecordSheet> {
 
   void _reset() {
     _timer?.cancel();
-    _stopWaveAccumulation();
+    _stopAmplitudeListener();
     if (_finalPath != null) {
       try { File(_finalPath!).deleteSync(); } catch (_) {}
     }
+    _lastAmp = 0.0;
     setState(() {
       _status    = _Status.idle;
       _elapsed   = Duration.zero;
@@ -159,7 +183,7 @@ class _AudioRecordSheetState extends State<AudioRecordSheet> {
   @override
   void dispose() {
     _timer?.cancel();
-    _waveTimer?.cancel();
+    _stopAmplitudeListener();
     if (_recorderOpen) _recorder.closeRecorder();
     super.dispose();
   }
@@ -180,23 +204,24 @@ class _AudioRecordSheetState extends State<AudioRecordSheet> {
               width: 40, height: 4,
               margin: const EdgeInsets.only(bottom: 24),
               decoration: BoxDecoration(
-                  color: Colors.white24,
-                  borderRadius: BorderRadius.circular(2)),
+                color: Colors.white24,
+                borderRadius: BorderRadius.circular(2),
+              ),
             ),
           ),
 
-          const Text('Témoignage oral',
-              style: TextStyle(fontSize: 18, fontWeight: FontWeight.w700,
-                  color: AppColors.textPrimary)),
+          const Text(
+            'Témoignage oral',
+            style: TextStyle(
+              fontSize: 18, fontWeight: FontWeight.w700,
+              color: AppColors.textPrimary,
+            ),
+          ),
 
           const SizedBox(height: 20),
-
           _buildDeviceSelector(),
-
           const SizedBox(height: 20),
-
           _buildMagnetophone(),
-
           const SizedBox(height: 24),
 
           if (_status == _Status.idle)
@@ -208,19 +233,35 @@ class _AudioRecordSheetState extends State<AudioRecordSheet> {
             ),
 
           if (_status == _Status.recording) ...[
-            _CtrlButton(icon: Icons.pause, label: 'Pause',
-                color: AppColors.textMuted, onTap: _pauseRecording),
+            _CtrlButton(
+              icon:  Icons.pause,
+              label: 'Pause',
+              color: AppColors.textMuted,
+              onTap: _pauseRecording,
+            ),
             const SizedBox(height: 12),
-            _CtrlButton(icon: Icons.stop, label: 'Arrêter',
-                color: const Color(0xFFE53935), onTap: _stopRecording),
+            _CtrlButton(
+              icon:  Icons.stop,
+              label: 'Arrêter',
+              color: const Color(0xFFE53935),
+              onTap: _stopRecording,
+            ),
           ],
 
           if (_status == _Status.paused) ...[
-            _CtrlButton(icon: Icons.play_arrow, label: 'Reprendre',
-                color: AppColors.textPrimary, onTap: _resumeRecording),
+            _CtrlButton(
+              icon:  Icons.play_arrow,
+              label: 'Reprendre',
+              color: AppColors.textPrimary,
+              onTap: _resumeRecording,
+            ),
             const SizedBox(height: 12),
-            _CtrlButton(icon: Icons.stop, label: 'Arrêter',
-                color: const Color(0xFFE53935), onTap: _stopRecording),
+            _CtrlButton(
+              icon:  Icons.stop,
+              label: 'Arrêter',
+              color: const Color(0xFFE53935),
+              onTap: _stopRecording,
+            ),
           ],
 
           if (_status == _Status.done) ...[
@@ -234,10 +275,11 @@ class _AudioRecordSheetState extends State<AudioRecordSheet> {
             const SizedBox(height: 12),
             TextButton.icon(
               onPressed: _reset,
-              icon:  const Icon(Icons.refresh, size: 16,
-                  color: AppColors.textMuted),
-              label: const Text('Recommencer',
-                  style: TextStyle(color: AppColors.textMuted, fontSize: 13)),
+              icon:  const Icon(Icons.refresh, size: 16, color: AppColors.textMuted),
+              label: const Text(
+                'Recommencer',
+                style: TextStyle(color: AppColors.textMuted, fontSize: 13),
+              ),
             ),
           ],
         ],
@@ -257,7 +299,7 @@ class _AudioRecordSheetState extends State<AudioRecordSheet> {
       ),
       child: Column(
         children: [
-          // ── Waveform accumulé ────────────────────────────────────────────
+          // ── Waveform amplitude réelle ──────────────────────────────────
           SizedBox(
             height: 60,
             child: ClipRect(
@@ -274,18 +316,20 @@ class _AudioRecordSheetState extends State<AudioRecordSheet> {
 
           const SizedBox(height: 16),
 
-          // ── Timer ────────────────────────────────────────────────────────
-          Text(_elapsedLabel,
-              style: const TextStyle(
-                fontSize:     36,
-                fontWeight:   FontWeight.w300,
-                color:        AppColors.textPrimary,
-                fontFeatures: [FontFeature.tabularFigures()],
-              )),
+          // ── Timer ──────────────────────────────────────────────────────
+          Text(
+            _elapsedLabel,
+            style: const TextStyle(
+              fontSize:     36,
+              fontWeight:   FontWeight.w300,
+              color:        AppColors.textPrimary,
+              fontFeatures: [FontFeature.tabularFigures()],
+            ),
+          ),
 
           const SizedBox(height: 8),
 
-          // ── Statut ───────────────────────────────────────────────────────
+          // ── Statut ─────────────────────────────────────────────────────
           Row(
             mainAxisAlignment: MainAxisAlignment.center,
             children: [
@@ -294,15 +338,19 @@ class _AudioRecordSheetState extends State<AudioRecordSheet> {
                   width: 8, height: 8,
                   margin: const EdgeInsets.only(right: 6),
                   decoration: const BoxDecoration(
-                      color: Color(0xFFE53935), shape: BoxShape.circle),
+                    color: Color(0xFFE53935),
+                    shape: BoxShape.circle,
+                  ),
                 ),
-              Text(_statusLabel(_status),
-                  style: TextStyle(
-                    fontSize: 12,
-                    color: isRecording
-                        ? const Color(0xFFE53935)
-                        : AppColors.textMuted,
-                  )),
+              Text(
+                _statusLabel(_status),
+                style: TextStyle(
+                  fontSize: 12,
+                  color: isRecording
+                      ? const Color(0xFFE53935)
+                      : AppColors.textMuted,
+                ),
+              ),
             ],
           ),
         ],
@@ -323,10 +371,14 @@ class _AudioRecordSheetState extends State<AudioRecordSheet> {
     if (_loadingDevices) {
       return const SizedBox(
         height: 44,
-        child: Center(child: SizedBox(
+        child: Center(
+          child: SizedBox(
             width: 16, height: 16,
             child: CircularProgressIndicator(
-                strokeWidth: 2, color: AppColors.textMuted))),
+              strokeWidth: 2, color: AppColors.textMuted,
+            ),
+          ),
+        ),
       );
     }
     if (_devices.length <= 1) return const SizedBox.shrink();
@@ -348,21 +400,24 @@ class _AudioRecordSheetState extends State<AudioRecordSheet> {
                 value:         _selectedDevice,
                 dropdownColor: AppColors.inputFill,
                 style:         AppTextStyles.input.copyWith(fontSize: 14),
-                icon: const Icon(Icons.keyboard_arrow_down,
-                    color: AppColors.textMuted, size: 18),
+                icon: const Icon(
+                  Icons.keyboard_arrow_down,
+                  color: AppColors.textMuted, size: 18,
+                ),
                 isExpanded: true,
                 items: _devices.map((d) => DropdownMenuItem<AudioDevice>(
                   value: d,
                   child: Row(children: [
                     Icon(
-                      d.isUsb ? Icons.usb_outlined
+                      d.isUsb        ? Icons.usb_outlined
                           : d.isBluetooth ? Icons.bluetooth_outlined
                           : Icons.mic_outlined,
                       size: 14, color: AppColors.textMuted,
                     ),
                     const SizedBox(width: 8),
-                    Expanded(child: Text(d.name,
-                        overflow: TextOverflow.ellipsis)),
+                    Expanded(
+                      child: Text(d.name, overflow: TextOverflow.ellipsis),
+                    ),
                   ]),
                 )).toList(),
                 onChanged: _status == _Status.idle
@@ -377,7 +432,7 @@ class _AudioRecordSheetState extends State<AudioRecordSheet> {
   }
 }
 
-// ── Waveform Painter ───────────────────────────────────────────────────────────
+// ── Waveform Painter — amplitude réelle ───────────────────────────────────────
 
 class _WaveformPainter extends CustomPainter {
   final List<double> waveData;
@@ -398,14 +453,13 @@ class _WaveformPainter extends CustomPainter {
     final centerY  = size.height / 2;
     final maxBars  = (size.width / barStep).floor();
 
-    // ── Zone passée (gauche, 1/3) et zone future (droite, 2/3) ────────────
-    final cursorX = size.width / 3;
-
     // Ligne de fond
     canvas.drawLine(
       Offset(0, centerY),
       Offset(size.width, centerY),
-      Paint()..color = const Color(0xFF2A2A2A)..strokeWidth = 1,
+      Paint()
+        ..color       = const Color(0xFF2A2A2A)
+        ..strokeWidth = 1,
     );
 
     if (waveData.isEmpty) return;
@@ -417,9 +471,9 @@ class _WaveformPainter extends CustomPainter {
 
     final pastPaint = Paint()
       ..color       = isRecording
-          ? const Color(0xFFE53935).withValues(alpha: 0.5)
+          ? const Color(0xFFE53935).withValues(alpha: 0.45)
           : isPaused
-              ? const Color(0xFFE53935).withValues(alpha: 0.3)
+              ? const Color(0xFFE53935).withValues(alpha: 0.25)
               : const Color(0xFF555555)
       ..strokeWidth = barWidth
       ..strokeCap   = StrokeCap.round;
@@ -434,24 +488,24 @@ class _WaveformPainter extends CustomPainter {
       ..strokeCap   = StrokeCap.round;
 
     final futurePaint = Paint()
-      ..color       = const Color(0xFF333333)
+      ..color       = const Color(0xFF2E2E2E)
       ..strokeWidth = barWidth
       ..strokeCap   = StrokeCap.round;
 
     for (int i = 0; i < visible.length; i++) {
-      final barH  = max(2.0, visible[i] * size.height * 0.85);
+      // Hauteur minimum 2px pour rendre le silence visible
+      final barH  = max(2.0, visible[i] * size.height * 0.9);
       final xPos  = i * barStep + barWidth / 2;
       final isActive = i == visible.length - 1;
 
-      final paint = isActive ? activePaint : pastPaint;
       canvas.drawLine(
         Offset(xPos, centerY - barH / 2),
         Offset(xPos, centerY + barH / 2),
-        paint,
+        isActive ? activePaint : pastPaint,
       );
     }
 
-    // Barres futures (vides, à droite du curseur)
+    // Barres futures (à droite)
     for (int i = visible.length; i < maxBars; i++) {
       final xPos = i * barStep + barWidth / 2;
       canvas.drawLine(
@@ -461,7 +515,7 @@ class _WaveformPainter extends CustomPainter {
       );
     }
 
-    // Curseur rouge à 1/3
+    // Curseur de position
     if (isRecording || isPaused) {
       final cx = (visible.length * barStep).clamp(0.0, size.width).toDouble();
       canvas.drawLine(
@@ -477,15 +531,15 @@ class _WaveformPainter extends CustomPainter {
   @override
   bool shouldRepaint(_WaveformPainter old) =>
       old.waveData.length != waveData.length ||
-      old.isRecording != isRecording ||
-      old.isPaused != isPaused;
+      old.isRecording      != isRecording     ||
+      old.isPaused         != isPaused;
 }
 
 // ── Waveform statique pour la lecture (save_local) ────────────────────────────
 
 class WaveformDisplay extends StatelessWidget {
   final List<double> waveData;
-  final double       progress;    // 0.0 → 1.0
+  final double       progress;
   final bool         isPlaying;
 
   const WaveformDisplay({
@@ -530,7 +584,6 @@ class _WaveformPlaybackPainter extends CustomPainter {
     final maxBars  = (size.width / barStep).floor();
     final centerY  = size.height / 2;
 
-    // Données par défaut si vides
     final data = waveData.isNotEmpty
         ? waveData
         : List.generate(maxBars, (i) {
@@ -538,10 +591,7 @@ class _WaveformPlaybackPainter extends CustomPainter {
             return 0.3 + 0.5 * sin(x * pi * 6) * sin(x * pi);
           });
 
-    final visible = data.length > maxBars
-        ? data.sublist(0, maxBars)
-        : data;
-
+    final visible   = data.length > maxBars ? data.sublist(0, maxBars) : data;
     final progressX = size.width * progress;
 
     for (int i = 0; i < visible.length; i++) {
@@ -549,35 +599,41 @@ class _WaveformPlaybackPainter extends CustomPainter {
       final barH = max(2.0, visible[i] * size.height * 0.9);
       final done = x <= progressX;
 
-      final color = done
-          ? const Color(0xFFE53935)
-          : const Color(0xFF444444);
-
-      final paint = Paint()
-        ..color       = color
-        ..strokeWidth = barWidth
-        ..strokeCap   = StrokeCap.round;
-
       canvas.drawLine(
         Offset(x, centerY - barH / 2),
         Offset(x, centerY + barH / 2),
-        paint,
+        Paint()
+          ..color       = done
+              ? const Color(0xFFE53935)
+              : const Color(0xFF444444)
+          ..strokeWidth = barWidth
+          ..strokeCap   = StrokeCap.round,
       );
     }
   }
 
   @override
   bool shouldRepaint(_WaveformPlaybackPainter old) =>
-      old.progress != progress || old.isPlaying != isPlaying ||
-      old.waveData.length != waveData.length;
+      old.progress         != progress  ||
+      old.isPlaying        != isPlaying ||
+      old.waveData.length  != waveData.length;
 }
 
+// ── Bouton de contrôle ────────────────────────────────────────────────────────
+
 class _CtrlButton extends StatelessWidget {
-  final IconData icon; final String label;
-  final Color color; final VoidCallback onTap; final bool filled;
+  final IconData      icon;
+  final String        label;
+  final Color         color;
+  final VoidCallback  onTap;
+  final bool          filled;
+
   const _CtrlButton({
-    required this.icon, required this.label,
-    required this.color, required this.onTap, this.filled = false,
+    required this.icon,
+    required this.label,
+    required this.color,
+    required this.onTap,
+    this.filled = false,
   });
 
   @override
@@ -589,10 +645,13 @@ class _CtrlButton extends StatelessWidget {
         style: OutlinedButton.styleFrom(
           backgroundColor: filled ? color : Colors.transparent,
           foregroundColor: filled ? AppColors.background : color,
-          side: BorderSide(color: filled ? color : const Color(0xFF444444)),
+          side: BorderSide(
+            color: filled ? color : const Color(0xFF444444),
+          ),
           padding: const EdgeInsets.symmetric(vertical: 14),
           shape: RoundedRectangleBorder(
-              borderRadius: BorderRadius.circular(10)),
+            borderRadius: BorderRadius.circular(10),
+          ),
         ),
         icon:  Icon(icon, size: 18),
         label: Text(label, style: const TextStyle(fontSize: 14)),
