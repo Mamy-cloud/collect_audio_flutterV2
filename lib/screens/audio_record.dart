@@ -404,60 +404,53 @@ class _WaveformPainter extends CustomPainter {
   @override
   void paint(Canvas canvas, Size size) {
     final centerY = size.height / 2;
-    final maxBars = (size.width / 5).floor();
 
     canvas.drawLine(Offset(0, centerY), Offset(size.width, centerY),
       Paint()..color = const Color(0xFF2A2A2A)..strokeWidth = 1);
 
     if (waveData.isEmpty) return;
 
-    final visible = waveData.length > maxBars
-        ? waveData.sublist(waveData.length - maxBars) : waveData;
-
-    final Color activeColor = isRecording ? const Color(0xFFE53935)
+    final Color color = isRecording ? const Color(0xFFE53935)
         : isPaused ? const Color(0xFFE53935).withValues(alpha: 0.6)
-        : const Color(0xFF777777);
-    final Color pastColor = isRecording
-        ? const Color(0xFFE53935).withValues(alpha: 0.4)
-        : isPaused ? const Color(0xFFE53935).withValues(alpha: 0.25)
-        : const Color(0xFF444444);
+        : const Color(0xFF555555);
 
-    const double barW = 3.0;
-    const double step = 5.0;
+    const double cycleW = 12.0;
+    final maxCycles = (size.width / cycleW).floor();
+
+    final visible = waveData.length > maxCycles
+        ? waveData.sublist(waveData.length - maxCycles) : waveData;
+
+    final path = Path()..moveTo(0, centerY);
 
     for (int i = 0; i < visible.length; i++) {
-      final amp    = visible[i];
-      final x      = i * step + barW / 2;
-      final halfH  = amp < 0.01 ? 1.0 : max(1.5, amp * size.height * 0.44);
-      final isLast = i == visible.length - 1;
-      final color  = isLast ? activeColor : pastColor;
+      final amp = visible[i];
+      final x0  = i * cycleW;
+      final h   = amp < 0.01 ? 0.0 : amp * size.height * 0.44;
 
-      final pathTop = Path()
-        ..moveTo(x, centerY - halfH)
-        ..lineTo(x - barW / 2, centerY)
-        ..lineTo(x + barW / 2, centerY)
-        ..close();
-
-      final pathBot = Path()
-        ..moveTo(x, centerY + halfH)
-        ..lineTo(x - barW / 2, centerY)
-        ..lineTo(x + barW / 2, centerY)
-        ..close();
-
-      canvas.drawPath(pathTop, Paint()..color = color..style = PaintingStyle.fill);
-      canvas.drawPath(pathBot, Paint()..color = color..style = PaintingStyle.fill);
+      if (h < 1.0) {
+        path.lineTo(x0 + cycleW, centerY);
+      } else {
+        path.lineTo(x0 + cycleW * 0.20, centerY);
+        path.lineTo(x0 + cycleW * 0.30, centerY - h * 0.15);
+        path.lineTo(x0 + cycleW * 0.40, centerY);
+        path.lineTo(x0 + cycleW * 0.48, centerY + h * 0.10);
+        path.lineTo(x0 + cycleW * 0.55, centerY - h);
+        path.lineTo(x0 + cycleW * 0.62, centerY + h * 0.12);
+        path.lineTo(x0 + cycleW * 0.75, centerY - h * 0.20);
+        path.lineTo(x0 + cycleW * 0.90, centerY);
+        path.lineTo(x0 + cycleW,        centerY);
+      }
     }
 
-    // ── Zone future ───────────────────────────────────────────────
-    final filledX = visible.length * step;
-    if (filledX < size.width) {
-      canvas.drawLine(Offset(filledX, centerY), Offset(size.width, centerY),
-        Paint()..color = const Color(0xFF2E2E2E)..strokeWidth = 1.0);
-    }
+    canvas.drawPath(path, Paint()
+      ..color       = color
+      ..strokeWidth = 1.8
+      ..strokeCap   = StrokeCap.round
+      ..strokeJoin  = StrokeJoin.round
+      ..style       = PaintingStyle.stroke);
 
-    // ── Curseur ───────────────────────────────────────────────────
     if (isRecording || isPaused) {
-      final cx = filledX.clamp(0.0, size.width);
+      final cx = (visible.length * cycleW).clamp(0.0, size.width);
       canvas.drawLine(Offset(cx, 0), Offset(cx, size.height),
         Paint()..color = const Color(0xFFFF5252)..strokeWidth = 1.5);
     }
@@ -507,40 +500,67 @@ class _WaveformPlaybackPainter extends CustomPainter {
   @override
   void paint(Canvas canvas, Size size) {
     final centerY = size.height / 2;
-    final maxBars = (size.width / 5).floor();
+    const double cycleW = 12.0;
+    final maxCycles = (size.width / cycleW).floor();
 
     final data = waveData.isNotEmpty ? waveData
-        : List.generate(maxBars, (i) {
-            final x = i / maxBars;
-            return 0.2 + 0.5 * sin(x * pi * 10).abs() * sin(x * pi);
+        : List.generate(maxCycles, (i) {
+            final x = i / maxCycles;
+            return 0.2 + 0.5 * sin(x * pi * 6).abs() * sin(x * pi);
           });
 
-    final visible   = data.length > maxBars ? data.sublist(0, maxBars) : data;
+    final visible   = data.length > maxCycles ? data.sublist(0, maxCycles) : data;
     final progressX = size.width * progress;
-    const double barW = 3.0;
-    const double step = 5.0;
+
+    final pathPlayed = Path()..moveTo(0, centerY);
+    final pathFuture = Path();
+    bool futureStarted = false;
 
     for (int i = 0; i < visible.length; i++) {
-      final amp   = visible[i];
-      final x     = i * step + barW / 2;
-      final halfH = amp < 0.01 ? 1.0 : max(1.5, amp * size.height * 0.44);
-      final done  = x <= progressX;
-      final color = done ? const Color(0xFFE53935) : const Color(0xFF3A3A3A);
+      final amp  = visible[i];
+      final x0   = i * cycleW;
+      final h    = amp < 0.01 ? 0.0 : amp * size.height * 0.44;
+      final xEnd = x0 + cycleW;
+      final isPlayed = x0 <= progressX;
 
-      final pathTop = Path()
-        ..moveTo(x, centerY - halfH)
-        ..lineTo(x - barW / 2, centerY)
-        ..lineTo(x + barW / 2, centerY)
-        ..close();
+      void addCycle(Path p) {
+        if (h < 1.0) {
+          p.lineTo(xEnd, centerY);
+        } else {
+          p.lineTo(x0 + cycleW * 0.20, centerY);
+          p.lineTo(x0 + cycleW * 0.30, centerY - h * 0.15);
+          p.lineTo(x0 + cycleW * 0.40, centerY);
+          p.lineTo(x0 + cycleW * 0.48, centerY + h * 0.10);
+          p.lineTo(x0 + cycleW * 0.55, centerY - h);
+          p.lineTo(x0 + cycleW * 0.62, centerY + h * 0.12);
+          p.lineTo(x0 + cycleW * 0.75, centerY - h * 0.20);
+          p.lineTo(x0 + cycleW * 0.90, centerY);
+          p.lineTo(xEnd,               centerY);
+        }
+      }
 
-      final pathBot = Path()
-        ..moveTo(x, centerY + halfH)
-        ..lineTo(x - barW / 2, centerY)
-        ..lineTo(x + barW / 2, centerY)
-        ..close();
+      if (isPlayed) {
+        addCycle(pathPlayed);
+      } else {
+        if (!futureStarted) {
+          pathFuture.moveTo(x0, centerY);
+          futureStarted = true;
+        }
+        addCycle(pathFuture);
+      }
+    }
 
-      canvas.drawPath(pathTop, Paint()..color = color..style = PaintingStyle.fill);
-      canvas.drawPath(pathBot, Paint()..color = color..style = PaintingStyle.fill);
+    final strokeStyle = Paint()
+      ..strokeWidth = 1.8
+      ..strokeCap   = StrokeCap.round
+      ..strokeJoin  = StrokeJoin.round
+      ..style       = PaintingStyle.stroke;
+
+    canvas.drawPath(pathPlayed,
+      strokeStyle..color = const Color(0xFFE53935));
+    if (futureStarted) {
+      canvas.drawPath(pathFuture,
+        strokeStyle..color = const Color(0xFF3A3A3A));
     }
   }
 
