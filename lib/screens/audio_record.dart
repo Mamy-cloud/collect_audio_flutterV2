@@ -509,8 +509,6 @@ class _WaveformPlaybackPainter extends CustomPainter {
     final progressX = size.width * progress;
 
     final pathPlayed = Path()..moveTo(0, centerY);
-    final pathFuture = Path();
-    bool futureStarted = false;
 
     for (int i = 0; i < visible.length; i++) {
       final amp    = visible[i];
@@ -520,18 +518,13 @@ class _WaveformPlaybackPainter extends CustomPainter {
       final h      = amp < 0.01 ? 0.0 : amp * size.height * 0.85;
       final played = x0 <= progressX;
 
-      final p = played ? pathPlayed : pathFuture;
-
-      if (!played && !futureStarted) {
-        pathFuture.moveTo(x0, centerY);
-        futureStarted = true;
-      }
+      if (!played) break; // arrête dès qu'on dépasse le curseur
 
       if (h < 1.0) {
-        p.lineTo(x1, centerY);
+        pathPlayed.lineTo(x1, centerY);
       } else {
-        p.quadraticBezierTo(x0 + cycleW * 0.25, centerY + h * 0.5, xM, centerY - h);
-        p.quadraticBezierTo(x0 + cycleW * 0.75, centerY + h * 0.5, x1, centerY);
+        pathPlayed.quadraticBezierTo(x0 + cycleW * 0.25, centerY + h * 0.5, xM, centerY - h);
+        pathPlayed.quadraticBezierTo(x0 + cycleW * 0.75, centerY + h * 0.5, x1, centerY);
       }
     }
 
@@ -540,12 +533,12 @@ class _WaveformPlaybackPainter extends CustomPainter {
       ..strokeCap = StrokeCap.round..strokeJoin = StrokeJoin.round
       ..style = PaintingStyle.stroke);
 
-    if (futureStarted) {
-      canvas.drawPath(pathFuture, Paint()
-        ..color = const Color(0xFF3A3A3A)..strokeWidth = 1.8
-        ..strokeCap = StrokeCap.round..strokeJoin = StrokeJoin.round
-        ..style = PaintingStyle.stroke);
-    }
+    // Futur → ligne plate grise
+    canvas.drawLine(
+      Offset(progressX, centerY),
+      Offset(size.width, centerY),
+      Paint()..color = const Color(0xFF3A3A3A)..strokeWidth = 1.8..strokeCap = StrokeCap.round,
+    );
   }
 
   @override
