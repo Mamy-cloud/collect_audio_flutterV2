@@ -29,10 +29,15 @@ class _AudioRecordSheetState extends State<AudioRecordSheet> {
   final FlutterSoundRecorder _recorder     = FlutterSoundRecorder();
   bool                       _recorderOpen = false;
 
-  // ── Waveform basé sur amplitude réelle ────────────────────────────────────
-  final List<double> _waveData    = [];
-  double             _lastAmp     = 0.0;   // dernière amplitude lissée
+  // ── Waveform ──────────────────────────────────────────────────────────────
+  final List<double> _waveData = [];
+  double             _lastAmp  = 0.0;
   StreamSubscription? _recorderSub;
+
+  // ── Calibration dynamique ─────────────────────────────────────────────────
+  double _minDbObserved = -10.0;
+  double _maxDbObserved = -10.0;
+  bool   _calibrated    = false;
 
   // ── Appareils audio ────────────────────────────────────────────────────────
   List<AudioDevice> _devices       = [];
@@ -45,27 +50,55 @@ class _AudioRecordSheetState extends State<AudioRecordSheet> {
     _loadDevices();
   }
 
-  // ── Abonne au flux d'amplitude réel de flutter_sound ──────────────────────
-
   void _startAmplitudeListener() {
-    // flutter_sound émet onProgress toutes les ~100ms avec decibels
     _recorderSub = _recorder.onProgress!.listen((event) {
       if (!mounted) return;
 
-      final db = event.decibels ?? -60.0;
+      final rawDb = event.decibels;
+      if (rawDb == null) return;
 
-      // Convertit dB → amplitude normalisée 0.0..1.0
-      // Plage typique micro : -60 dB (silence) → 0 dB (saturation)
-      const double minDb = -60.0;
-      const double maxDb =   0.0;
-      final double normalized = ((db - minDb) / (maxDb - minDb)).clamp(0.0, 1.0);
+      final db = rawDb.toDouble();
 
-      // Lissage exponentiel : réagit vite à la montée, descend doucement
-      final double alpha = normalized > _lastAmp ? 0.7 : 0.25;
+      // ── 1. Seuil de silence — en dessous de -35dB → silence total ────────
+      if (db < -35.0) {
+        // Descente douce vers 0 pour ne pas couper brutalement
+        final smoothed = _lastAmp * 0.1;
+        _lastAmp = smoothed;
+        setState(() => _waveData.add(smoothed));
+        return;
+      }
+
+      // ── 2. Calibration dynamique ──────────────────────────────────────────
+      if (!_calibrated) {
+        _minDbObserved = db;
+        _maxDbObserved = db;
+        _calibrated    = true;
+      } else {
+        if (db < _minDbObserved) _minDbObserved = db;
+        if (db > _maxDbObserved) _maxDbObserved = db;
+      }
+
+      final range         = (_maxDbObserved - _minDbObserved).abs();
+      final effectiveRange = range < 20.0 ? 20.0 : range;
+      final effectiveMin   = _maxDbObserved - effectiveRange;
+
+      double normalized = ((db - effectiveMin) / effectiveRange).clamp(0.0, 1.0);
+
+      // ── 3. Zone morte — supprime les micro-bruits résiduels ───────────────
+      if (normalized < 0.08) normalized = 0.0;
+
+      // ── 4. Boost des voix fortes (courbe WhatsApp) ────────────────────────
+      // pow(x, 0.6) amplifie le milieu sans saturer les pics
+      if (normalized > 0.0) {
+        normalized = pow(normalized, 0.6).toDouble();
+      }
+
+      // ── 5. Lissage exponentiel asymétrique ───────────────────────────────
+      // Montée rapide (0.8) / descente lente (0.15)
+      final double alpha    = normalized > _lastAmp ? 0.8 : 0.15;
       final double smoothed = _lastAmp * (1 - alpha) + normalized * alpha;
 
       _lastAmp = smoothed;
-
       setState(() => _waveData.add(smoothed));
     });
   }
@@ -91,9 +124,8 @@ class _AudioRecordSheetState extends State<AudioRecordSheet> {
       final status = await Permission.microphone.request();
       if (!status.isGranted) throw Exception('Permission microphone refusée');
       await _recorder.openRecorder();
-      // Active le flux d'amplitude toutes les 100ms
       await _recorder.setSubscriptionDuration(
-        const Duration(milliseconds: 100),
+        const Duration(milliseconds: 80),
       );
       _recorderOpen = true;
     }
@@ -109,8 +141,11 @@ class _AudioRecordSheetState extends State<AudioRecordSheet> {
 
   Future<void> _startRecording() async {
     await _openRecorder();
-    _elapsed  = Duration.zero;
-    _lastAmp  = 0.0;
+    _elapsed       = Duration.zero;
+    _lastAmp       = 0.0;
+    _calibrated    = false;
+    _minDbObserved = -10.0;
+    _maxDbObserved = -10.0;
     _waveData.clear();
     _finalPath = await _newPath();
 
@@ -163,7 +198,8 @@ class _AudioRecordSheetState extends State<AudioRecordSheet> {
     if (_finalPath != null) {
       try { File(_finalPath!).deleteSync(); } catch (_) {}
     }
-    _lastAmp = 0.0;
+    _lastAmp    = 0.0;
+    _calibrated = false;
     setState(() {
       _status    = _Status.idle;
       _elapsed   = Duration.zero;
@@ -299,7 +335,6 @@ class _AudioRecordSheetState extends State<AudioRecordSheet> {
       ),
       child: Column(
         children: [
-          // ── Waveform amplitude réelle ──────────────────────────────────
           SizedBox(
             height: 60,
             child: ClipRect(
@@ -316,7 +351,6 @@ class _AudioRecordSheetState extends State<AudioRecordSheet> {
 
           const SizedBox(height: 16),
 
-          // ── Timer ──────────────────────────────────────────────────────
           Text(
             _elapsedLabel,
             style: const TextStyle(
@@ -329,7 +363,6 @@ class _AudioRecordSheetState extends State<AudioRecordSheet> {
 
           const SizedBox(height: 8),
 
-          // ── Statut ─────────────────────────────────────────────────────
           Row(
             mainAxisAlignment: MainAxisAlignment.center,
             children: [
@@ -432,7 +465,7 @@ class _AudioRecordSheetState extends State<AudioRecordSheet> {
   }
 }
 
-// ── Waveform Painter — amplitude réelle ───────────────────────────────────────
+// ── Waveform Painter ──────────────────────────────────────────────────────────
 
 class _WaveformPainter extends CustomPainter {
   final List<double> waveData;
@@ -453,7 +486,6 @@ class _WaveformPainter extends CustomPainter {
     final centerY  = size.height / 2;
     final maxBars  = (size.width / barStep).floor();
 
-    // Ligne de fond
     canvas.drawLine(
       Offset(0, centerY),
       Offset(size.width, centerY),
@@ -464,7 +496,6 @@ class _WaveformPainter extends CustomPainter {
 
     if (waveData.isEmpty) return;
 
-    // Barres visibles — les dernières maxBars
     final visible = waveData.length > maxBars
         ? waveData.sublist(waveData.length - maxBars)
         : waveData;
@@ -493,9 +524,10 @@ class _WaveformPainter extends CustomPainter {
       ..strokeCap   = StrokeCap.round;
 
     for (int i = 0; i < visible.length; i++) {
-      // Hauteur minimum 2px pour rendre le silence visible
-      final barH  = max(2.0, visible[i] * size.height * 0.9);
-      final xPos  = i * barStep + barWidth / 2;
+      final amp      = visible[i];
+      // Si amplitude nulle → ligne fine (silence visible mais plat)
+      final barH     = amp < 0.01 ? 1.5 : max(2.0, amp * size.height * 0.9);
+      final xPos     = i * barStep + barWidth / 2;
       final isActive = i == visible.length - 1;
 
       canvas.drawLine(
@@ -505,7 +537,6 @@ class _WaveformPainter extends CustomPainter {
       );
     }
 
-    // Barres futures (à droite)
     for (int i = visible.length; i < maxBars; i++) {
       final xPos = i * barStep + barWidth / 2;
       canvas.drawLine(
@@ -515,7 +546,6 @@ class _WaveformPainter extends CustomPainter {
       );
     }
 
-    // Curseur de position
     if (isRecording || isPaused) {
       final cx = (visible.length * barStep).clamp(0.0, size.width).toDouble();
       canvas.drawLine(
@@ -531,11 +561,11 @@ class _WaveformPainter extends CustomPainter {
   @override
   bool shouldRepaint(_WaveformPainter old) =>
       old.waveData.length != waveData.length ||
-      old.isRecording      != isRecording     ||
-      old.isPaused         != isPaused;
+      old.isRecording     != isRecording     ||
+      old.isPaused        != isPaused;
 }
 
-// ── Waveform statique pour la lecture (save_local) ────────────────────────────
+// ── Waveform statique pour la lecture ─────────────────────────────────────────
 
 class WaveformDisplay extends StatelessWidget {
   final List<double> waveData;
@@ -596,7 +626,8 @@ class _WaveformPlaybackPainter extends CustomPainter {
 
     for (int i = 0; i < visible.length; i++) {
       final x    = i * barStep + barWidth / 2;
-      final barH = max(2.0, visible[i] * size.height * 0.9);
+      final amp  = visible[i];
+      final barH = amp < 0.01 ? 1.5 : max(2.0, amp * size.height * 0.9);
       final done = x <= progressX;
 
       canvas.drawLine(
@@ -614,19 +645,19 @@ class _WaveformPlaybackPainter extends CustomPainter {
 
   @override
   bool shouldRepaint(_WaveformPlaybackPainter old) =>
-      old.progress         != progress  ||
-      old.isPlaying        != isPlaying ||
-      old.waveData.length  != waveData.length;
+      old.progress        != progress  ||
+      old.isPlaying       != isPlaying ||
+      old.waveData.length != waveData.length;
 }
 
 // ── Bouton de contrôle ────────────────────────────────────────────────────────
 
 class _CtrlButton extends StatelessWidget {
-  final IconData      icon;
-  final String        label;
-  final Color         color;
-  final VoidCallback  onTap;
-  final bool          filled;
+  final IconData     icon;
+  final String       label;
+  final Color        color;
+  final VoidCallback onTap;
+  final bool         filled;
 
   const _CtrlButton({
     required this.icon,
