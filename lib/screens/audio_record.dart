@@ -403,7 +403,7 @@ class _WaveformPainter extends CustomPainter {
 
   @override
   void paint(Canvas canvas, Size size) {
-    final centerY = size.height / 2;
+    final centerY = size.height * 0.75; // ligne de base plus bas
 
     canvas.drawLine(Offset(0, centerY), Offset(size.width, centerY),
       Paint()..color = const Color(0xFF2A2A2A)..strokeWidth = 1);
@@ -414,7 +414,7 @@ class _WaveformPainter extends CustomPainter {
         : isPaused ? const Color(0xFFE53935).withValues(alpha: 0.6)
         : const Color(0xFF555555);
 
-    const double cycleW = 12.0;
+    const double cycleW = 14.0;
     final maxCycles = (size.width / cycleW).floor();
 
     final visible = waveData.length > maxCycles
@@ -425,20 +425,16 @@ class _WaveformPainter extends CustomPainter {
     for (int i = 0; i < visible.length; i++) {
       final amp = visible[i];
       final x0  = i * cycleW;
-      final h   = amp < 0.01 ? 0.0 : amp * size.height * 0.44;
+      final xM  = x0 + cycleW / 2;
+      final x1  = x0 + cycleW;
+      final h   = amp < 0.01 ? 0.0 : amp * size.height * 0.85;
 
       if (h < 1.0) {
-        path.lineTo(x0 + cycleW, centerY);
+        path.lineTo(x1, centerY);
       } else {
-        path.lineTo(x0 + cycleW * 0.20, centerY);
-        path.lineTo(x0 + cycleW * 0.30, centerY - h * 0.15);
-        path.lineTo(x0 + cycleW * 0.40, centerY);
-        path.lineTo(x0 + cycleW * 0.48, centerY + h * 0.10);
-        path.lineTo(x0 + cycleW * 0.55, centerY - h);
-        path.lineTo(x0 + cycleW * 0.62, centerY + h * 0.12);
-        path.lineTo(x0 + cycleW * 0.75, centerY - h * 0.20);
-        path.lineTo(x0 + cycleW * 0.90, centerY);
-        path.lineTo(x0 + cycleW,        centerY);
+        // Côtés bombés vers l'extérieur — pic vers le haut uniquement
+        path.quadraticBezierTo(x0 + cycleW * 0.25, centerY + h * 0.5, xM, centerY - h);
+        path.quadraticBezierTo(x0 + cycleW * 0.75, centerY + h * 0.5, x1, centerY);
       }
     }
 
@@ -499,8 +495,8 @@ class _WaveformPlaybackPainter extends CustomPainter {
 
   @override
   void paint(Canvas canvas, Size size) {
-    final centerY = size.height / 2;
-    const double cycleW = 12.0;
+    final centerY = size.height * 0.75;
+    const double cycleW = 14.0;
     final maxCycles = (size.width / cycleW).floor();
 
     final data = waveData.isNotEmpty ? waveData
@@ -517,50 +513,38 @@ class _WaveformPlaybackPainter extends CustomPainter {
     bool futureStarted = false;
 
     for (int i = 0; i < visible.length; i++) {
-      final amp  = visible[i];
-      final x0   = i * cycleW;
-      final h    = amp < 0.01 ? 0.0 : amp * size.height * 0.44;
-      final xEnd = x0 + cycleW;
-      final isPlayed = x0 <= progressX;
+      final amp    = visible[i];
+      final x0     = i * cycleW;
+      final xM     = x0 + cycleW / 2;
+      final x1     = x0 + cycleW;
+      final h      = amp < 0.01 ? 0.0 : amp * size.height * 0.85;
+      final played = x0 <= progressX;
 
-      void addCycle(Path p) {
-        if (h < 1.0) {
-          p.lineTo(xEnd, centerY);
-        } else {
-          p.lineTo(x0 + cycleW * 0.20, centerY);
-          p.lineTo(x0 + cycleW * 0.30, centerY - h * 0.15);
-          p.lineTo(x0 + cycleW * 0.40, centerY);
-          p.lineTo(x0 + cycleW * 0.48, centerY + h * 0.10);
-          p.lineTo(x0 + cycleW * 0.55, centerY - h);
-          p.lineTo(x0 + cycleW * 0.62, centerY + h * 0.12);
-          p.lineTo(x0 + cycleW * 0.75, centerY - h * 0.20);
-          p.lineTo(x0 + cycleW * 0.90, centerY);
-          p.lineTo(xEnd,               centerY);
-        }
+      final p = played ? pathPlayed : pathFuture;
+
+      if (!played && !futureStarted) {
+        pathFuture.moveTo(x0, centerY);
+        futureStarted = true;
       }
 
-      if (isPlayed) {
-        addCycle(pathPlayed);
+      if (h < 1.0) {
+        p.lineTo(x1, centerY);
       } else {
-        if (!futureStarted) {
-          pathFuture.moveTo(x0, centerY);
-          futureStarted = true;
-        }
-        addCycle(pathFuture);
+        p.quadraticBezierTo(x0 + cycleW * 0.25, centerY + h * 0.5, xM, centerY - h);
+        p.quadraticBezierTo(x0 + cycleW * 0.75, centerY + h * 0.5, x1, centerY);
       }
     }
 
-    final strokeStyle = Paint()
-      ..strokeWidth = 1.8
-      ..strokeCap   = StrokeCap.round
-      ..strokeJoin  = StrokeJoin.round
-      ..style       = PaintingStyle.stroke;
+    canvas.drawPath(pathPlayed, Paint()
+      ..color = const Color(0xFFE53935)..strokeWidth = 1.8
+      ..strokeCap = StrokeCap.round..strokeJoin = StrokeJoin.round
+      ..style = PaintingStyle.stroke);
 
-    canvas.drawPath(pathPlayed,
-      strokeStyle..color = const Color(0xFFE53935));
     if (futureStarted) {
-      canvas.drawPath(pathFuture,
-        strokeStyle..color = const Color(0xFF3A3A3A));
+      canvas.drawPath(pathFuture, Paint()
+        ..color = const Color(0xFF3A3A3A)..strokeWidth = 1.8
+        ..strokeCap = StrokeCap.round..strokeJoin = StrokeJoin.round
+        ..style = PaintingStyle.stroke);
     }
   }
 
