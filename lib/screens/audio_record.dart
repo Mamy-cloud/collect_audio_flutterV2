@@ -39,6 +39,13 @@ class _AudioRecordSheetState extends State<AudioRecordSheet> {
   double _maxDbObserved = -10.0;
   bool   _calibrated    = false;
 
+  // ── DEBUG — valeurs affichées dans le widget ──────────────────────────────
+  double? _debugRawDb;
+  double  _debugNormalized = 0.0;
+  double  _debugSmoothed   = 0.0;
+  int     _debugEventCount = 0;
+  String  _debugStatus     = 'En attente...';
+
   // ── Appareils audio ────────────────────────────────────────────────────────
   List<AudioDevice> _devices       = [];
   AudioDevice?      _selectedDevice;
@@ -51,24 +58,40 @@ class _AudioRecordSheetState extends State<AudioRecordSheet> {
   }
 
   void _startAmplitudeListener() {
+    _debugStatus     = 'Listener démarré';
+    _debugEventCount = 0;
+
     _recorderSub = _recorder.onProgress!.listen((event) {
       if (!mounted) return;
 
+      _debugEventCount++;
       final rawDb = event.decibels;
+
+      // ── Mise à jour debug ────────────────────────────────────────────────
+      setState(() {
+        _debugRawDb  = rawDb;
+        _debugStatus = rawDb == null
+            ? '⚠️ decibels = NULL'
+            : '✅ decibels reçus';
+      });
+
       if (rawDb == null) return;
 
       final db = rawDb.toDouble();
 
-      // ── 1. Seuil de silence — en dessous de -35dB → silence total ────────
+      // 1. Seuil silence
       if (db < -35.0) {
-        // Descente douce vers 0 pour ne pas couper brutalement
         final smoothed = _lastAmp * 0.1;
         _lastAmp = smoothed;
-        setState(() => _waveData.add(smoothed));
+        setState(() {
+          _waveData.add(smoothed);
+          _debugNormalized = 0.0;
+          _debugSmoothed   = smoothed;
+        });
         return;
       }
 
-      // ── 2. Calibration dynamique ──────────────────────────────────────────
+      // 2. Calibration dynamique
       if (!_calibrated) {
         _minDbObserved = db;
         _maxDbObserved = db;
@@ -78,28 +101,31 @@ class _AudioRecordSheetState extends State<AudioRecordSheet> {
         if (db > _maxDbObserved) _maxDbObserved = db;
       }
 
-      final range         = (_maxDbObserved - _minDbObserved).abs();
+      final range          = (_maxDbObserved - _minDbObserved).abs();
       final effectiveRange = range < 20.0 ? 20.0 : range;
       final effectiveMin   = _maxDbObserved - effectiveRange;
 
       double normalized = ((db - effectiveMin) / effectiveRange).clamp(0.0, 1.0);
 
-      // ── 3. Zone morte — supprime les micro-bruits résiduels ───────────────
+      // 3. Zone morte
       if (normalized < 0.08) normalized = 0.0;
 
-      // ── 4. Boost des voix fortes (courbe WhatsApp) ────────────────────────
-      // pow(x, 0.6) amplifie le milieu sans saturer les pics
+      // 4. Boost voix
       if (normalized > 0.0) {
         normalized = pow(normalized, 0.6).toDouble();
       }
 
-      // ── 5. Lissage exponentiel asymétrique ───────────────────────────────
-      // Montée rapide (0.8) / descente lente (0.15)
+      // 5. Lissage asymétrique
       final double alpha    = normalized > _lastAmp ? 0.8 : 0.15;
       final double smoothed = _lastAmp * (1 - alpha) + normalized * alpha;
 
       _lastAmp = smoothed;
-      setState(() => _waveData.add(smoothed));
+
+      setState(() {
+        _waveData.add(smoothed);
+        _debugNormalized = normalized;
+        _debugSmoothed   = smoothed;
+      });
     });
   }
 
@@ -150,8 +176,11 @@ class _AudioRecordSheetState extends State<AudioRecordSheet> {
     _finalPath = await _newPath();
 
     await _recorder.startRecorder(
-      toFile: _finalPath,
-      codec:  Codec.aacADTS,
+      toFile:      _finalPath,
+      codec:       Codec.aacADTS,
+      bitRate:     128000,
+      numChannels: 1,
+      sampleRate:  44100,
     );
 
     _timer = Timer.periodic(const Duration(seconds: 1), (_) {
@@ -201,9 +230,14 @@ class _AudioRecordSheetState extends State<AudioRecordSheet> {
     _lastAmp    = 0.0;
     _calibrated = false;
     setState(() {
-      _status    = _Status.idle;
-      _elapsed   = Duration.zero;
-      _finalPath = null;
+      _status          = _Status.idle;
+      _elapsed         = Duration.zero;
+      _finalPath       = null;
+      _debugRawDb      = null;
+      _debugNormalized = 0.0;
+      _debugSmoothed   = 0.0;
+      _debugEventCount = 0;
+      _debugStatus     = 'En attente...';
       _waveData.clear();
     });
   }
@@ -258,6 +292,11 @@ class _AudioRecordSheetState extends State<AudioRecordSheet> {
           _buildDeviceSelector(),
           const SizedBox(height: 20),
           _buildMagnetophone(),
+          const SizedBox(height: 12),
+
+          // ── Widget DEBUG ─────────────────────────────────────────────────
+          _buildDebugPanel(),
+
           const SizedBox(height: 24),
 
           if (_status == _Status.idle)
@@ -318,6 +357,95 @@ class _AudioRecordSheetState extends State<AudioRecordSheet> {
               ),
             ),
           ],
+        ],
+      ),
+    );
+  }
+
+  // ── Panneau de debug visible sur le téléphone ─────────────────────────────
+
+  Widget _buildDebugPanel() {
+    return Container(
+      width: double.infinity,
+      padding: const EdgeInsets.all(12),
+      decoration: BoxDecoration(
+        color:        const Color(0xFF0D1117),
+        borderRadius: BorderRadius.circular(10),
+        border:       Border.all(color: const Color(0xFF30363D)),
+      ),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Row(
+            children: [
+              const Icon(Icons.bug_report, size: 14, color: Color(0xFF58A6FF)),
+              const SizedBox(width: 6),
+              Text(
+                'DEBUG — Amplitude micro',
+                style: TextStyle(
+                  fontSize: 11,
+                  color:    const Color(0xFF58A6FF),
+                  fontWeight: FontWeight.w600,
+                ),
+              ),
+            ],
+          ),
+          const SizedBox(height: 8),
+          _debugRow('Status',      _debugStatus),
+          _debugRow('Events reçus', '$_debugEventCount'),
+          _debugRow(
+            'Raw dB',
+            _debugRawDb == null
+                ? 'null ⚠️'
+                : _debugRawDb!.toStringAsFixed(2),
+          ),
+          _debugRow('Min dB obs.',  _calibrated ? _minDbObserved.toStringAsFixed(2) : '-'),
+          _debugRow('Max dB obs.',  _calibrated ? _maxDbObserved.toStringAsFixed(2) : '-'),
+          _debugRow('Normalized',  _debugNormalized.toStringAsFixed(3)),
+          _debugRow('Smoothed',    _debugSmoothed.toStringAsFixed(3)),
+          _debugRow('Bars total',  '${_waveData.length}'),
+
+          // Barre visuelle de l'amplitude actuelle
+          const SizedBox(height: 6),
+          ClipRRect(
+            borderRadius: BorderRadius.circular(3),
+            child: LinearProgressIndicator(
+              value:           _debugSmoothed.clamp(0.0, 1.0),
+              backgroundColor: const Color(0xFF21262D),
+              valueColor:      AlwaysStoppedAnimation<Color>(
+                _debugSmoothed > 0.01
+                    ? const Color(0xFF3FB950)
+                    : const Color(0xFF30363D),
+              ),
+              minHeight: 6,
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+
+  Widget _debugRow(String label, String value) {
+    return Padding(
+      padding: const EdgeInsets.symmetric(vertical: 1.5),
+      child: Row(
+        mainAxisAlignment: MainAxisAlignment.spaceBetween,
+        children: [
+          Text(
+            label,
+            style: const TextStyle(
+              fontSize: 11,
+              color:    Color(0xFF8B949E),
+            ),
+          ),
+          Text(
+            value,
+            style: const TextStyle(
+              fontSize: 11,
+              color:    Color(0xFFE6EDF3),
+              fontFamily: 'monospace',
+            ),
+          ),
         ],
       ),
     );
@@ -525,7 +653,6 @@ class _WaveformPainter extends CustomPainter {
 
     for (int i = 0; i < visible.length; i++) {
       final amp      = visible[i];
-      // Si amplitude nulle → ligne fine (silence visible mais plat)
       final barH     = amp < 0.01 ? 1.5 : max(2.0, amp * size.height * 0.9);
       final xPos     = i * barStep + barWidth / 2;
       final isActive = i == visible.length - 1;

@@ -1,4 +1,5 @@
-// login_screen.dart.
+// login_screen.dart
+import 'dart:async';
 import 'package:flutter/material.dart';
 import 'package:go_router/go_router.dart';
 import '../services/session_service.dart';
@@ -19,9 +20,8 @@ class _LoginScreenState extends State<LoginScreen> {
   final _codeCtrl        = TextEditingController();
 
   bool    _isLoading         = false;
-  bool    _internetAvailable = false;
   bool    _serverAvailable   = false;
-  String  _statusMessage     = 'Vérification de la connexion...';
+  String  _statusMessage     = 'Vérification du serveur...';
 
   @override
   void initState() {
@@ -29,13 +29,14 @@ class _LoginScreenState extends State<LoginScreen> {
     _checkServer();
   }
 
+  // ── Appel unique au démarrage de l'écran ──────────────────────────────────
+
   Future<void> _checkServer() async {
-    final check = await LoginApiService.checkServerStatus();
+    final result = await LoginApiService.checkServerStatus();
     if (mounted) {
       setState(() {
-        _internetAvailable = check.internetAvailable;
-        _serverAvailable   = check.serverAvailable;
-        _statusMessage     = check.message;
+        _serverAvailable = result.serverAvailable;
+        _statusMessage   = result.message;
       });
     }
   }
@@ -89,18 +90,33 @@ class _LoginScreenState extends State<LoginScreen> {
       return;
     }
 
-    if (!_internetAvailable) {
+    // Revérifie le serveur au moment du clic
+    setState(() {
+      _isLoading     = true;
+      _statusMessage = 'Vérification du serveur...';
+    });
+
+    final check = await LoginApiService.checkServerStatus();
+    if (mounted) {
+      setState(() {
+        _serverAvailable = check.serverAvailable;
+        _statusMessage   = check.message;
+      });
+    }
+
+    if (!check.internetAvailable) {
+      setState(() => _isLoading = false);
       _snack('Connexion Internet requise pour se connecter.');
       return;
     }
 
-    if (!_serverAvailable) {
+    if (!check.serverAvailable) {
+      setState(() => _isLoading = false);
       _snack('Serveur inaccessible. Réessayez plus tard.');
       return;
     }
 
-    setState(() => _isLoading = true);
-
+    // ── Envoie identifiant + password vers FastAPI ─────────────────────────
     final result = await LoginApiService.login(
       identifiant: identifiant,
       password:    password,
@@ -120,7 +136,7 @@ class _LoginScreenState extends State<LoginScreen> {
       return;
     }
 
-    // ── Connexion réussie → upsert SQLite + last_login ─────────────────────
+    // ── Connexion réussie → upsert SQLite ──────────────────────────────────
     await _upsertUserInSqlite(
       id:          result.userId!,
       identifiant: identifiant,
@@ -130,7 +146,6 @@ class _LoginScreenState extends State<LoginScreen> {
     if (!mounted) return;
     setState(() => _isLoading = false);
 
-    // ── Sauvegarde session mémoire et redirige ─────────────────────────────
     await SessionService.login(result.userId!, identifiant);
     context.go('/list_temoin');
   }
@@ -146,6 +161,13 @@ class _LoginScreenState extends State<LoginScreen> {
         side:         const BorderSide(color: Colors.white24),
       ),
     ));
+  }
+
+  @override
+  void dispose() {
+    _identifiantCtrl.dispose();
+    _codeCtrl.dispose();
+    super.dispose();
   }
 
   @override
@@ -172,6 +194,7 @@ class _LoginScreenState extends State<LoginScreen> {
                   const LoginHeroImage(assetPath: 'assets/img/logo_essai.png'),
                   const SizedBox(height: 20),
 
+                  // ── Statut serveur ───────────────────────────────────────
                   Row(
                     mainAxisAlignment: MainAxisAlignment.center,
                     children: [
@@ -181,9 +204,7 @@ class _LoginScreenState extends State<LoginScreen> {
                           shape: BoxShape.circle,
                           color: _serverAvailable
                               ? const Color(0xFF4CAF50)
-                              : _internetAvailable
-                                  ? const Color(0xFFFF9800)
-                                  : const Color(0xFFE53935),
+                              : const Color(0xFFE53935),
                         ),
                       ),
                       const SizedBox(width: 8),
@@ -193,9 +214,7 @@ class _LoginScreenState extends State<LoginScreen> {
                           fontSize: 12,
                           color: _serverAvailable
                               ? const Color(0xFF4CAF50)
-                              : _internetAvailable
-                                  ? const Color(0xFFFF9800)
-                                  : AppColors.textMuted,
+                              : AppColors.textMuted,
                         ),
                       ),
                     ],
@@ -229,12 +248,5 @@ class _LoginScreenState extends State<LoginScreen> {
         ),
       ),
     );
-  }
-
-  @override
-  void dispose() {
-    _identifiantCtrl.dispose();
-    _codeCtrl.dispose();
-    super.dispose();
   }
 }
