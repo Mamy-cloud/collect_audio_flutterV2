@@ -403,80 +403,61 @@ class _WaveformPainter extends CustomPainter {
 
   @override
   void paint(Canvas canvas, Size size) {
-    final centerY  = size.height / 2;
-    final maxPts   = size.width.toInt() * 2;
-    const smoothPts = 4;
+    final centerY = size.height / 2;
+    final maxBars = (size.width / 5).floor();
 
     canvas.drawLine(Offset(0, centerY), Offset(size.width, centerY),
       Paint()..color = const Color(0xFF2A2A2A)..strokeWidth = 1);
 
     if (waveData.isEmpty) return;
 
-    final visible = waveData.length > maxPts
-        ? waveData.sublist(waveData.length - maxPts) : waveData;
+    final visible = waveData.length > maxBars
+        ? waveData.sublist(waveData.length - maxBars) : waveData;
 
-    final Color waveColor = isRecording ? const Color(0xFFE53935)
+    final Color activeColor = isRecording ? const Color(0xFFE53935)
         : isPaused ? const Color(0xFFE53935).withValues(alpha: 0.6)
-        : const Color(0xFF555555);
+        : const Color(0xFF777777);
+    final Color pastColor = isRecording
+        ? const Color(0xFFE53935).withValues(alpha: 0.4)
+        : isPaused ? const Color(0xFFE53935).withValues(alpha: 0.25)
+        : const Color(0xFF444444);
 
-    final int n = visible.length;
-    final List<Offset> topPts = [];
-    final List<Offset> botPts = [];
+    const double barW = 3.0;
+    const double step = 5.0;
 
-    for (int i = 0; i < n; i++) {
-      final amp     = visible[i];
-      final env     = amp * size.height * 0.42;
-      final nextAmp = i + 1 < n ? visible[i + 1] : amp;
-      for (int s = 0; s < smoothPts; s++) {
-        final t        = (i * smoothPts + s) / (n * smoothPts);
-        final x        = t * size.width;
-        final sine     = sin((i * smoothPts + s) * pi / smoothPts).abs();
-        final tLocal   = s / smoothPts;
-        final interpEnv = env * (1 - tLocal) + nextAmp * size.height * 0.42 * tLocal;
-        topPts.add(Offset(x, centerY - sine * interpEnv));
-        botPts.add(Offset(x, centerY + sine * interpEnv));
-      }
+    for (int i = 0; i < visible.length; i++) {
+      final amp    = visible[i];
+      final x      = i * step + barW / 2;
+      final halfH  = amp < 0.01 ? 1.0 : max(1.5, amp * size.height * 0.44);
+      final isLast = i == visible.length - 1;
+      final color  = isLast ? activeColor : pastColor;
+
+      final pathTop = Path()
+        ..moveTo(x, centerY - halfH)
+        ..lineTo(x - barW / 2, centerY)
+        ..lineTo(x + barW / 2, centerY)
+        ..close();
+
+      final pathBot = Path()
+        ..moveTo(x, centerY + halfH)
+        ..lineTo(x - barW / 2, centerY)
+        ..lineTo(x + barW / 2, centerY)
+        ..close();
+
+      canvas.drawPath(pathTop, Paint()..color = color..style = PaintingStyle.fill);
+      canvas.drawPath(pathBot, Paint()..color = color..style = PaintingStyle.fill);
     }
 
-    if (topPts.isEmpty) return;
-
-    final pathTop  = Path();
-    final pathBot  = Path();
-    final pathFill = Path();
-
-    pathTop.moveTo(topPts[0].dx, topPts[0].dy);
-    for (int i = 1; i < topPts.length - 1; i++) {
-      final mid = Offset((topPts[i].dx + topPts[i+1].dx)/2, (topPts[i].dy + topPts[i+1].dy)/2);
-      pathTop.quadraticBezierTo(topPts[i].dx, topPts[i].dy, mid.dx, mid.dy);
-    }
-
-    pathBot.moveTo(botPts[0].dx, botPts[0].dy);
-    for (int i = 1; i < botPts.length - 1; i++) {
-      final mid = Offset((botPts[i].dx + botPts[i+1].dx)/2, (botPts[i].dy + botPts[i+1].dy)/2);
-      pathBot.quadraticBezierTo(botPts[i].dx, botPts[i].dy, mid.dx, mid.dy);
-    }
-
-    pathFill.addPath(pathTop, Offset.zero);
-    for (int i = botPts.length - 1; i >= 0; i--) {
-      pathFill.lineTo(botPts[i].dx, botPts[i].dy);
-    }
-    pathFill.close();
-
-    canvas.drawPath(pathFill,
-      Paint()..color = waveColor.withValues(alpha: 0.12)..style = PaintingStyle.fill);
-    canvas.drawPath(pathTop,
-      Paint()..color = waveColor..strokeWidth = 1.8..style = PaintingStyle.stroke..strokeCap = StrokeCap.round);
-    canvas.drawPath(pathBot,
-      Paint()..color = waveColor..strokeWidth = 1.8..style = PaintingStyle.stroke..strokeCap = StrokeCap.round);
-
-    if (visible.length < maxPts) {
-      final startX = topPts.isEmpty ? 0.0 : topPts.last.dx;
-      canvas.drawLine(Offset(startX, centerY), Offset(size.width, centerY),
+    // ── Zone future ───────────────────────────────────────────────
+    final filledX = visible.length * step;
+    if (filledX < size.width) {
+      canvas.drawLine(Offset(filledX, centerY), Offset(size.width, centerY),
         Paint()..color = const Color(0xFF2E2E2E)..strokeWidth = 1.0);
     }
 
+    // ── Curseur ───────────────────────────────────────────────────
     if (isRecording || isPaused) {
-      final cx = topPts.isEmpty ? 0.0 : topPts.last.dx.clamp(0.0, size.width);
+      final cx = filledX.clamp(0.0, size.width);
       canvas.drawLine(Offset(cx, 0), Offset(cx, size.height),
         Paint()..color = const Color(0xFFFF5252)..strokeWidth = 1.5);
     }
@@ -525,68 +506,42 @@ class _WaveformPlaybackPainter extends CustomPainter {
 
   @override
   void paint(Canvas canvas, Size size) {
-    final maxPts  = size.width.toInt() * 2;
     final centerY = size.height / 2;
-    const smoothPts = 4;
+    final maxBars = (size.width / 5).floor();
 
     final data = waveData.isNotEmpty ? waveData
-        : List.generate(size.width.toInt(), (i) {
-            final x = i / size.width;
-            return 0.3 + 0.4 * sin(x * pi * 8).abs();
+        : List.generate(maxBars, (i) {
+            final x = i / maxBars;
+            return 0.2 + 0.5 * sin(x * pi * 10).abs() * sin(x * pi);
           });
 
-    final visible   = data.length > maxPts ? data.sublist(0, maxPts) : data;
+    final visible   = data.length > maxBars ? data.sublist(0, maxBars) : data;
     final progressX = size.width * progress;
-    final int n     = visible.length;
+    const double barW = 3.0;
+    const double step = 5.0;
 
-    final List<Offset> topPlayed = [], botPlayed = [];
-    final List<Offset> topFuture = [], botFuture = [];
+    for (int i = 0; i < visible.length; i++) {
+      final amp   = visible[i];
+      final x     = i * step + barW / 2;
+      final halfH = amp < 0.01 ? 1.0 : max(1.5, amp * size.height * 0.44);
+      final done  = x <= progressX;
+      final color = done ? const Color(0xFFE53935) : const Color(0xFF3A3A3A);
 
-    for (int i = 0; i < n; i++) {
-      final amp     = visible[i];
-      final env     = amp * size.height * 0.42;
-      final nextAmp = i + 1 < n ? visible[i + 1] : amp;
-      for (int s = 0; s < smoothPts; s++) {
-        final t        = (i * smoothPts + s) / (n * smoothPts);
-        final x        = t * size.width;
-        final sine     = sin((i * smoothPts + s) * pi / smoothPts).abs();
-        final tLocal   = s / smoothPts;
-        final interpEnv = env * (1 - tLocal) + nextAmp * size.height * 0.42 * tLocal;
-        final topY = centerY - sine * interpEnv;
-        final botY = centerY + sine * interpEnv;
-        if (x <= progressX) {
-          topPlayed.add(Offset(x, topY));
-          botPlayed.add(Offset(x, botY));
-        } else {
-          topFuture.add(Offset(x, topY));
-          botFuture.add(Offset(x, botY));
-        }
-      }
+      final pathTop = Path()
+        ..moveTo(x, centerY - halfH)
+        ..lineTo(x - barW / 2, centerY)
+        ..lineTo(x + barW / 2, centerY)
+        ..close();
+
+      final pathBot = Path()
+        ..moveTo(x, centerY + halfH)
+        ..lineTo(x - barW / 2, centerY)
+        ..lineTo(x + barW / 2, centerY)
+        ..close();
+
+      canvas.drawPath(pathTop, Paint()..color = color..style = PaintingStyle.fill);
+      canvas.drawPath(pathBot, Paint()..color = color..style = PaintingStyle.fill);
     }
-
-    void drawWave(List<Offset> top, List<Offset> bot, Color color) {
-      if (top.isEmpty) return;
-      final pathT = Path()..moveTo(top[0].dx, top[0].dy);
-      for (int i = 1; i < top.length - 1; i++) {
-        final mid = Offset((top[i].dx+top[i+1].dx)/2, (top[i].dy+top[i+1].dy)/2);
-        pathT.quadraticBezierTo(top[i].dx, top[i].dy, mid.dx, mid.dy);
-      }
-      final pathB = Path()..moveTo(bot[0].dx, bot[0].dy);
-      for (int i = 1; i < bot.length - 1; i++) {
-        final mid = Offset((bot[i].dx+bot[i+1].dx)/2, (bot[i].dy+bot[i+1].dy)/2);
-        pathB.quadraticBezierTo(bot[i].dx, bot[i].dy, mid.dx, mid.dy);
-      }
-      final pathF = Path()..addPath(pathT, Offset.zero);
-      for (int i = bot.length - 1; i >= 0; i--) pathF.lineTo(bot[i].dx, bot[i].dy);
-      pathF.close();
-
-      canvas.drawPath(pathF, Paint()..color = color.withValues(alpha: 0.12)..style = PaintingStyle.fill);
-      canvas.drawPath(pathT, Paint()..color = color..strokeWidth = 1.8..style = PaintingStyle.stroke..strokeCap = StrokeCap.round);
-      canvas.drawPath(pathB, Paint()..color = color..strokeWidth = 1.8..style = PaintingStyle.stroke..strokeCap = StrokeCap.round);
-    }
-
-    drawWave(topPlayed, botPlayed, const Color(0xFFE53935));
-    drawWave(topFuture, botFuture, const Color(0xFF444444));
   }
 
   @override
