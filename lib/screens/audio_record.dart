@@ -577,12 +577,11 @@ class _WaveformPainter extends CustomPainter {
 
   @override
   void paint(Canvas canvas, Size size) {
-    const barWidth = 3.0;
-    const barGap   = 2.0;
-    const barStep  = barWidth + barGap;
     final centerY  = size.height / 2;
-    final maxBars  = (size.width / barStep).floor();
+    final maxPts   = size.width.toInt() * 2; // résolution x2 pour lissage
+    const smoothPts = 4; // points de lissage par segment
 
+    // Ligne de fond
     canvas.drawLine(
       Offset(0, centerY), Offset(size.width, centerY),
       Paint()..color = const Color(0xFF2A2A2A)..strokeWidth = 1,
@@ -590,48 +589,120 @@ class _WaveformPainter extends CustomPainter {
 
     if (waveData.isEmpty) return;
 
-    final visible = waveData.length > maxBars
-        ? waveData.sublist(waveData.length - maxBars) : waveData;
+    final visible = waveData.length > maxPts
+        ? waveData.sublist(waveData.length - maxPts)
+        : waveData;
 
-    final pastPaint = Paint()
-      ..color = isRecording
-          ? const Color(0xFFE53935).withValues(alpha: 0.45)
-          : isPaused ? const Color(0xFFE53935).withValues(alpha: 0.25)
-          : const Color(0xFF555555)
-      ..strokeWidth = barWidth..strokeCap = StrokeCap.round;
+    final Color waveColor = isRecording
+        ? const Color(0xFFE53935)
+        : isPaused
+            ? const Color(0xFFE53935).withValues(alpha: 0.6)
+            : const Color(0xFF555555);
 
-    final activePaint = Paint()
-      ..color = isRecording ? const Color(0xFFE53935)
-          : isPaused ? const Color(0xFFE53935).withValues(alpha: 0.6)
-          : const Color(0xFF777777)
-      ..strokeWidth = barWidth..strokeCap = StrokeCap.round;
+    final paintWave = Paint()
+      ..color       = waveColor
+      ..strokeWidth = 1.8
+      ..strokeCap   = StrokeCap.round
+      ..style       = PaintingStyle.stroke;
 
-    final futurePaint = Paint()
-      ..color = const Color(0xFF2E2E2E)
-      ..strokeWidth = barWidth..strokeCap = StrokeCap.round;
+    final paintFill = Paint()
+      ..color = waveColor.withValues(alpha: 0.12)
+      ..style = PaintingStyle.fill;
 
-    for (int i = 0; i < visible.length; i++) {
+    final pathTop    = Path();
+    final pathBottom = Path();
+    final pathFill   = Path();
+
+    // ── Génère la courbe sinusoïdale avec enveloppe ───────────────────
+    // Chaque sample d'amplitude devient un pic sinusoïdal
+    // On interpole entre les samples pour une courbe ultra-lisse
+
+    final int n = visible.length;
+    final List<Offset> topPts    = [];
+    final List<Offset> bottomPts = [];
+
+    for (int i = 0; i < n; i++) {
       final amp  = visible[i];
-      final barH = amp < 0.01 ? 1.5 : max(2.0, amp * size.height * 0.9);
-      final xPos = i * barStep + barWidth / 2;
-      canvas.drawLine(
-        Offset(xPos, centerY - barH / 2),
-        Offset(xPos, centerY + barH / 2),
-        i == visible.length - 1 ? activePaint : pastPaint,
+      final env  = amp * size.height * 0.42;
+
+      // subdivise chaque sample en smoothPts points
+      for (int s = 0; s < smoothPts; s++) {
+        final t     = (i * smoothPts + s) / (n * smoothPts);
+        final x     = t * size.width;
+
+        // Sinusoïde en pic : abs(sin) pour avoir des pics vers le haut ET bas
+        // phase continue pour la fluidité
+        final phase = i * smoothPts + s;
+        final sine  = sin(phase * pi / smoothPts).abs();
+
+        // Interpolation douce de l'enveloppe avec le sample suivant
+        final nextAmp = i + 1 < n ? visible[i + 1] : amp;
+        final tLocal  = s / smoothPts;
+        final interpEnv = (env * (1 - tLocal) +
+            nextAmp * size.height * 0.42 * tLocal);
+
+        topPts.add(Offset(x, centerY - sine * interpEnv));
+        bottomPts.add(Offset(x, centerY + sine * interpEnv));
+      }
+    }
+
+    if (topPts.isEmpty) return;
+
+    // ── Courbe du haut ────────────────────────────────────────────────
+    pathTop.moveTo(topPts[0].dx, topPts[0].dy);
+    for (int i = 1; i < topPts.length - 1; i++) {
+      final mid = Offset(
+        (topPts[i].dx + topPts[i + 1].dx) / 2,
+        (topPts[i].dy + topPts[i + 1].dy) / 2,
+      );
+      pathTop.quadraticBezierTo(
+        topPts[i].dx, topPts[i].dy, mid.dx, mid.dy,
       );
     }
 
-    for (int i = visible.length; i < maxBars; i++) {
-      final xPos = i * barStep + barWidth / 2;
-      canvas.drawLine(
-        Offset(xPos, centerY - 2), Offset(xPos, centerY + 2), futurePaint,
+    // ── Courbe du bas ─────────────────────────────────────────────────
+    pathBottom.moveTo(bottomPts[0].dx, bottomPts[0].dy);
+    for (int i = 1; i < bottomPts.length - 1; i++) {
+      final mid = Offset(
+        (bottomPts[i].dx + bottomPts[i + 1].dx) / 2,
+        (bottomPts[i].dy + bottomPts[i + 1].dy) / 2,
+      );
+      pathBottom.quadraticBezierTo(
+        bottomPts[i].dx, bottomPts[i].dy, mid.dx, mid.dy,
       );
     }
 
+    // ── Zone de remplissage entre haut et bas ─────────────────────────
+    pathFill.addPath(pathTop, Offset.zero);
+    for (int i = bottomPts.length - 1; i >= 0; i--) {
+      if (i == bottomPts.length - 1) {
+        pathFill.lineTo(bottomPts[i].dx, bottomPts[i].dy);
+      } else {
+        pathFill.lineTo(bottomPts[i].dx, bottomPts[i].dy);
+      }
+    }
+    pathFill.close();
+
+    canvas.drawPath(pathFill, paintFill);
+    canvas.drawPath(pathTop,  paintWave);
+    canvas.drawPath(pathBottom, paintWave);
+
+    // ── Zone future ───────────────────────────────────────────────────
+    if (visible.length < maxPts) {
+      final startX = topPts.isEmpty ? 0.0 : topPts.last.dx;
+      canvas.drawLine(
+        Offset(startX, centerY), Offset(size.width, centerY),
+        Paint()..color = const Color(0xFF2E2E2E)..strokeWidth = 1.0,
+      );
+    }
+
+    // ── Curseur ───────────────────────────────────────────────────────
     if (isRecording || isPaused) {
-      final cx = (visible.length * barStep).clamp(0.0, size.width).toDouble();
-      canvas.drawLine(Offset(cx, 0), Offset(cx, size.height),
-        Paint()..color = const Color(0xFFFF5252)..strokeWidth = 1.5);
+      final cx = topPts.isEmpty ? 0.0 : topPts.last.dx.clamp(0.0, size.width);
+      canvas.drawLine(
+        Offset(cx, 0), Offset(cx, size.height),
+        Paint()..color = const Color(0xFFFF5252)..strokeWidth = 1.5,
+      );
     }
   }
 
@@ -678,32 +749,82 @@ class _WaveformPlaybackPainter extends CustomPainter {
 
   @override
   void paint(Canvas canvas, Size size) {
-    const barWidth = 2.0;
-    const barGap   = 1.0;
-    const barStep  = barWidth + barGap;
-    final maxBars  = (size.width / barStep).floor();
-    final centerY  = size.height / 2;
+    final maxPts  = size.width.toInt() * 2;
+    final centerY = size.height / 2;
+    const smoothPts = 4;
 
     final data = waveData.isNotEmpty ? waveData
-        : List.generate(maxBars, (i) {
-            final x = i / maxBars;
-            return 0.3 + 0.5 * sin(x * pi * 6) * sin(x * pi);
+        : List.generate(size.width.toInt(), (i) {
+            final x = i / size.width;
+            return 0.3 + 0.4 * sin(x * pi * 8).abs();
           });
 
-    final visible   = data.length > maxBars ? data.sublist(0, maxBars) : data;
+    final visible   = data.length > maxPts ? data.sublist(0, maxPts) : data;
     final progressX = size.width * progress;
+    final int n     = visible.length;
 
-    for (int i = 0; i < visible.length; i++) {
-      final x    = i * barStep + barWidth / 2;
-      final amp  = visible[i];
-      final barH = amp < 0.01 ? 1.5 : max(2.0, amp * size.height * 0.9);
-      canvas.drawLine(
-        Offset(x, centerY - barH / 2), Offset(x, centerY + barH / 2),
-        Paint()
-          ..color = x <= progressX ? const Color(0xFFE53935) : const Color(0xFF444444)
-          ..strokeWidth = barWidth..strokeCap = StrokeCap.round,
-      );
+    final pathPlayed  = Path();
+    final pathFuture  = Path();
+    final pathFillP   = Path();
+    final pathFillF   = Path();
+
+    final List<Offset> topPlayed   = [];
+    final List<Offset> botPlayed   = [];
+    final List<Offset> topFuture   = [];
+    final List<Offset> botFuture   = [];
+
+    for (int i = 0; i < n; i++) {
+      final amp     = visible[i];
+      final env     = amp * size.height * 0.42;
+      final nextAmp = i + 1 < n ? visible[i + 1] : amp;
+
+      for (int s = 0; s < smoothPts; s++) {
+        final t        = (i * smoothPts + s) / (n * smoothPts);
+        final x        = t * size.width;
+        final sine     = sin((i * smoothPts + s) * pi / smoothPts).abs();
+        final tLocal   = s / smoothPts;
+        final interpEnv = env * (1 - tLocal) +
+            nextAmp * size.height * 0.42 * tLocal;
+        final topY = centerY - sine * interpEnv;
+        final botY = centerY + sine * interpEnv;
+
+        if (x <= progressX) {
+          topPlayed.add(Offset(x, topY));
+          botPlayed.add(Offset(x, botY));
+        } else {
+          topFuture.add(Offset(x, topY));
+          botFuture.add(Offset(x, botY));
+        }
+      }
     }
+
+    void drawWave(List<Offset> top, List<Offset> bot, Color color, Path pathC, Path pathF) {
+      if (top.isEmpty) return;
+      pathC.moveTo(top[0].dx, top[0].dy);
+      for (int i = 1; i < top.length - 1; i++) {
+        final mid = Offset((top[i].dx + top[i+1].dx) / 2, (top[i].dy + top[i+1].dy) / 2);
+        pathC.quadraticBezierTo(top[i].dx, top[i].dy, mid.dx, mid.dy);
+      }
+      pathF.addPath(pathC, Offset.zero);
+      for (int i = bot.length - 1; i >= 0; i--) {
+        pathF.lineTo(bot[i].dx, bot[i].dy);
+      }
+      pathF.close();
+
+      final botPath = Path();
+      botPath.moveTo(bot[0].dx, bot[0].dy);
+      for (int i = 1; i < bot.length - 1; i++) {
+        final mid = Offset((bot[i].dx + bot[i+1].dx) / 2, (bot[i].dy + bot[i+1].dy) / 2);
+        botPath.quadraticBezierTo(bot[i].dx, bot[i].dy, mid.dx, mid.dy);
+      }
+
+      canvas.drawPath(pathF, Paint()..color = color.withValues(alpha: 0.12)..style = PaintingStyle.fill);
+      canvas.drawPath(pathC, Paint()..color = color..strokeWidth = 1.8..style = PaintingStyle.stroke..strokeCap = StrokeCap.round);
+      canvas.drawPath(botPath, Paint()..color = color..strokeWidth = 1.8..style = PaintingStyle.stroke..strokeCap = StrokeCap.round);
+    }
+
+    drawWave(topPlayed, botPlayed, const Color(0xFFE53935), pathPlayed, pathFillP);
+    drawWave(topFuture, botFuture, const Color(0xFF444444), pathFuture, pathFillF);
   }
 
   @override
