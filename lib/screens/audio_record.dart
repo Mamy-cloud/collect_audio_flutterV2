@@ -95,11 +95,8 @@ class _AudioRecordSheetState extends State<AudioRecordSheet> {
 
       double normalized = ((db - effectiveMin) / effectiveRange).clamp(0.0, 1.0);
 
-      // ── Seuil silence : 40% bas → silence total ───────────────────────
-      // En silence raw≈26, max≈65 → normalized ≈ (26-(-20))/85 ≈ 0.54
-      // Avec nouveau calcul : (26 - (65-85)) / 85 = (26+20)/85 ≈ 0.54
-      // On coupe tout ce qui est sous 0.45 → silence propre
-      if (normalized < 0.45) {
+      // ── Seuil silence : silence mesuré à 0.59 → coupe à 0.62 ────────
+      if (normalized < 0.62) {
         final smoothed = _lastAmp * 0.08;
         _lastAmp = smoothed;
         setState(() {
@@ -110,8 +107,8 @@ class _AudioRecordSheetState extends State<AudioRecordSheet> {
         return;
       }
 
-      // ── Remappe 0.45..1.0 → 0.0..1.0 ────────────────────────────────
-      normalized = ((normalized - 0.45) / 0.55).clamp(0.0, 1.0);
+      // ── Remappe 0.62..1.0 → 0.0..1.0 ────────────────────────────────
+      normalized = ((normalized - 0.62) / 0.38).clamp(0.0, 1.0);
 
       // ── Zone morte résiduelle ─────────────────────────────────────────
       if (normalized < 0.05) normalized = 0.0;
