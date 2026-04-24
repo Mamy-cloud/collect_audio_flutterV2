@@ -403,64 +403,50 @@ class _WaveformPainter extends CustomPainter {
 
   @override
   void paint(Canvas canvas, Size size) {
-    final centerY = size.height * 0.75;
+    final centerY = size.height / 2;
 
-    // ── Ligne de fond ─────────────────────────────────────────────
+    // Ligne centrale
     canvas.drawLine(Offset(0, centerY), Offset(size.width, centerY),
       Paint()..color = const Color(0xFF2A2A2A)..strokeWidth = 1);
+
+    if (waveData.isEmpty) return;
 
     final Color color = isRecording ? const Color(0xFFE53935)
         : isPaused ? const Color(0xFFE53935).withValues(alpha: 0.6)
         : const Color(0xFF555555);
 
-    const double barW = 4.0;
-    const double gap  = 3.0;
+    const double barW = 2.0;
+    const double gap  = 2.0;
     const double step = barW + gap;
     final maxBars = (size.width / step).floor();
 
-    // ── Toutes les barres s'accumulent de gauche à droite ─────────
+    // Toutes les barres s'accumulent de gauche à droite
     final visible = waveData.length > maxBars
         ? waveData.sublist(waveData.length - maxBars) : waveData;
 
+    final paint = Paint()
+      ..color     = color
+      ..strokeWidth = barW
+      ..strokeCap = StrokeCap.butt;
+
     for (int i = 0; i < visible.length; i++) {
       final amp  = visible[i];
-      final x    = i * step;
-      final h    = amp < 0.01 ? 2.0 : max(2.0, amp * size.height * 0.85);
+      final x    = i * step + barW / 2;
+      final h    = amp < 0.01 ? 2.0 : max(2.0, amp * size.height * 0.48);
 
-      canvas.drawRRect(
-        RRect.fromRectAndRadius(
-          Rect.fromLTWH(x, centerY - h, barW, h),
-          const Radius.circular(1),
-        ),
-        Paint()..color = color..style = PaintingStyle.fill,
+      // Barre symétrique haut et bas
+      canvas.drawLine(
+        Offset(x, centerY - h),
+        Offset(x, centerY + h),
+        paint,
       );
     }
 
-    // ── Curseur à la position actuelle ────────────────────────────
-    final cursorX = (visible.length * step).clamp(0.0, size.width);
-
+    // Curseur
     if (isRecording || isPaused) {
-      canvas.drawLine(Offset(cursorX, 0), Offset(cursorX, size.height),
+      final cx = (visible.length * step).clamp(0.0, size.width);
+      canvas.drawLine(Offset(cx, 0), Offset(cx, size.height),
         Paint()..color = const Color(0xFFFF5252)..strokeWidth = 1.5);
-    }
-
-    // ── Zone grise pointillée à droite ────────────────────────────
-    if (cursorX < size.width) {
-      double x = cursorX + step;
-      bool draw = true;
-      while (x < size.width) {
-        if (draw) {
-          canvas.drawRRect(
-            RRect.fromRectAndRadius(
-              Rect.fromLTWH(x, centerY - 2, barW, 2),
-              const Radius.circular(1),
-            ),
-            Paint()..color = const Color(0xFF2E2E2E)..style = PaintingStyle.fill,
-          );
-        }
-        x += step;
-        draw = !draw;
-      }
     }
   }
 
@@ -507,50 +493,37 @@ class _WaveformPlaybackPainter extends CustomPainter {
 
   @override
   void paint(Canvas canvas, Size size) {
-    final centerY = size.height * 0.75;
-    const double cycleW = 14.0;
-    final maxCycles = (size.width / cycleW).floor();
+    final centerY = size.height / 2;
+
+    const double barW = 2.0;
+    const double gap  = 2.0;
+    const double step = barW + gap;
+    final maxBars = (size.width / step).floor();
 
     final data = waveData.isNotEmpty ? waveData
-        : List.generate(maxCycles, (i) {
-            final x = i / maxCycles;
-            return 0.2 + 0.5 * sin(x * pi * 6).abs() * sin(x * pi);
+        : List.generate(maxBars, (i) {
+            final x = i / maxBars;
+            return 0.2 + 0.5 * sin(x * pi * 10).abs() * sin(x * pi);
           });
 
-    final visible   = data.length > maxCycles ? data.sublist(0, maxCycles) : data;
+    final visible   = data.length > maxBars ? data.sublist(0, maxBars) : data;
     final progressX = size.width * progress;
 
-    final pathPlayed = Path()..moveTo(0, centerY);
-
     for (int i = 0; i < visible.length; i++) {
-      final amp    = visible[i];
-      final x0     = i * cycleW;
-      final xM     = x0 + cycleW / 2;
-      final x1     = x0 + cycleW;
-      final h      = amp < 0.01 ? 0.0 : amp * size.height * 0.85;
-      final played = x0 <= progressX;
+      final amp   = visible[i];
+      final x     = i * step + barW / 2;
+      final h     = amp < 0.01 ? 2.0 : max(2.0, amp * size.height * 0.48);
+      final done  = x <= progressX;
 
-      if (!played) break; // arrête dès qu'on dépasse le curseur
-
-      if (h < 1.0) {
-        pathPlayed.lineTo(x1, centerY);
-      } else {
-        pathPlayed.quadraticBezierTo(x0 + cycleW * 0.25, centerY + h * 0.5, xM, centerY - h);
-        pathPlayed.quadraticBezierTo(x0 + cycleW * 0.75, centerY + h * 0.5, x1, centerY);
-      }
+      canvas.drawLine(
+        Offset(x, centerY - h),
+        Offset(x, centerY + h),
+        Paint()
+          ..color       = done ? const Color(0xFFE53935) : const Color(0xFF3A3A3A)
+          ..strokeWidth = barW
+          ..strokeCap   = StrokeCap.butt,
+      );
     }
-
-    canvas.drawPath(pathPlayed, Paint()
-      ..color = const Color(0xFFE53935)..strokeWidth = 1.8
-      ..strokeCap = StrokeCap.round..strokeJoin = StrokeJoin.round
-      ..style = PaintingStyle.stroke);
-
-    // Futur → ligne plate grise
-    canvas.drawLine(
-      Offset(progressX, centerY),
-      Offset(size.width, centerY),
-      Paint()..color = const Color(0xFF3A3A3A)..strokeWidth = 1.8..strokeCap = StrokeCap.round,
-    );
   }
 
   @override
