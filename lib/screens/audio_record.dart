@@ -1,5 +1,5 @@
 // audio_record.dart — VERSION ANDROID/iOS
-// flutter_sound pour l'enregistrement.
+// flutter_sound pour l'enregistrement
 // Waveform basé sur la vraie amplitude du microphone
 
 import 'dart:async';
@@ -35,9 +35,11 @@ class _AudioRecordSheetState extends State<AudioRecordSheet> {
   StreamSubscription? _recorderSub;
 
   // ── Calibration dynamique ─────────────────────────────────────────────────
-  double _minDbObserved = 0.0;
-  double _maxDbObserved = 0.0;
-  bool   _calibrated    = false;
+  double _minDbObserved  = 0.0;
+  double _maxDbObserved  = 0.0;
+  bool   _calibrated     = false;
+  int    _calibrateCount = 0;       // nb d'events pour calibrer
+  static const int _calibrateFrames = 30; // ~2.4s à 80ms
 
   // ── DEBUG ─────────────────────────────────────────────────────────────────
   double? _debugRawDb;
@@ -73,15 +75,19 @@ class _AudioRecordSheetState extends State<AudioRecordSheet> {
 
       final db = rawDb.toDouble();
 
-      // ── Calibration dynamique ─────────────────────────────────────────
-      if (!_calibrated) {
-        _minDbObserved = db;
-        _maxDbObserved = db;
-        _calibrated    = true;
-      } else {
-        if (db < _minDbObserved) _minDbObserved = db;
-        if (db > _maxDbObserved) _maxDbObserved = db;
+      // ── Calibration — active seulement les premières 30 frames ──────
+      if (_calibrateCount < _calibrateFrames) {
+        if (!_calibrated) {
+          _minDbObserved = db;
+          _maxDbObserved = db;
+          _calibrated    = true;
+        } else {
+          if (db < _minDbObserved) _minDbObserved = db;
+          if (db > _maxDbObserved) _maxDbObserved = db;
+        }
+        _calibrateCount++;
       }
+      // Après _calibrateFrames → min/max figés, plus de dérive
 
       final range          = (_maxDbObserved - _minDbObserved).abs();
       final effectiveRange = range < 15.0 ? 15.0 : range;
@@ -169,11 +175,12 @@ class _AudioRecordSheetState extends State<AudioRecordSheet> {
 
   Future<void> _startRecording() async {
     await _openRecorder();
-    _elapsed       = Duration.zero;
-    _lastAmp       = 0.0;
-    _calibrated    = false;
-    _minDbObserved = 0.0;
-    _maxDbObserved = 0.0;
+    _elapsed        = Duration.zero;
+    _lastAmp        = 0.0;
+    _calibrated     = false;
+    _calibrateCount = 0;
+    _minDbObserved  = 0.0;
+    _maxDbObserved  = 0.0;
     _waveData.clear();
     _finalPath = await _newPath();
 
@@ -391,6 +398,7 @@ class _AudioRecordSheetState extends State<AudioRecordSheet> {
             _debugRawDb == null ? 'null ⚠️' : _debugRawDb!.toStringAsFixed(2)),
           _debugRow('Min dB obs.',  _calibrated ? _minDbObserved.toStringAsFixed(2) : '-'),
           _debugRow('Max dB obs.',  _calibrated ? _maxDbObserved.toStringAsFixed(2) : '-'),
+          _debugRow('Calibré',      _calibrateCount >= _calibrateFrames ? '✅ figé' : '⏳ $_calibrateCount/$_calibrateFrames'),
           _debugRow('Normalized',   _debugNormalized.toStringAsFixed(3)),
           _debugRow('Smoothed',     _debugSmoothed.toStringAsFixed(3)),
           _debugRow('Bars total',   '${_waveData.length}'),
