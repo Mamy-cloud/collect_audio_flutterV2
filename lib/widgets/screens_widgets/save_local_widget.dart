@@ -19,9 +19,7 @@ String _formatDuree(dynamic secondes) {
   final h = total ~/ 3600;
   final m = (total % 3600) ~/ 60;
   final s = total % 60;
-  if (h > 0) {
-    return '${h}h ${m.toString().padLeft(2, '0')}m ${s.toString().padLeft(2, '0')}s';
-  }
+  if (h > 0) return '${h}h ${m.toString().padLeft(2, '0')}m ${s.toString().padLeft(2, '0')}s';
   if (m > 0) return '${m}m ${s.toString().padLeft(2, '0')}s';
   return '${s}s';
 }
@@ -37,8 +35,7 @@ class EnregistrementEmptyState extends StatelessWidget {
           const Icon(Icons.mic_none, size: 64, color: AppColors.textMuted),
           const SizedBox(height: 16),
           Text('Aucun témoin',
-              style: AppTextStyles.headline
-                  .copyWith(fontSize: 20, fontWeight: FontWeight.w600)),
+              style: AppTextStyles.headline.copyWith(fontSize: 20, fontWeight: FontWeight.w600)),
           const SizedBox(height: 8),
           Text("Créez d'abord un témoin depuis l'onglet Témoins.",
               style: AppTextStyles.label, textAlign: TextAlign.center),
@@ -51,60 +48,42 @@ class EnregistrementEmptyState extends StatelessWidget {
 class TemoinEnregistrementCard extends StatelessWidget {
   final Map<String, dynamic> temoin;
   final VoidCallback onTap;
-  const TemoinEnregistrementCard(
-      {super.key, required this.temoin, required this.onTap});
+  const TemoinEnregistrementCard({super.key, required this.temoin, required this.onTap});
 
   @override
   Widget build(BuildContext context) {
     final p = temoin['prenom'] as String? ?? '?';
-    final n = temoin['nom'] as String? ?? '?';
+    final n = temoin['nom']    as String? ?? '?';
     return GestureDetector(
       onTap: onTap,
       child: Container(
-        margin: const EdgeInsets.symmetric(horizontal: 16, vertical: 5),
+        margin:  const EdgeInsets.symmetric(horizontal: 16, vertical: 5),
         padding: const EdgeInsets.all(14),
         decoration: BoxDecoration(
-          color: AppColors.surface,
-          borderRadius: BorderRadius.circular(12),
+          color: AppColors.surface, borderRadius: BorderRadius.circular(12),
           border: Border.all(color: const Color(0xFF333333)),
         ),
         child: Row(
           children: [
             Container(
               width: 44, height: 44,
-              decoration: BoxDecoration(
-                shape: BoxShape.circle,
-                color: AppColors.inputFill,
-                border: Border.all(color: const Color(0xFF444444)),
-              ),
-              child: Center(
-                child: Text(
-                  '${p[0].toUpperCase()}${n[0].toUpperCase()}',
-                  style: const TextStyle(
-                      fontSize: 14,
-                      fontWeight: FontWeight.w600,
-                      color: AppColors.textPrimary),
-                ),
-              ),
+              decoration: BoxDecoration(shape: BoxShape.circle, color: AppColors.inputFill,
+                  border: Border.all(color: const Color(0xFF444444))),
+              child: Center(child: Text('${p[0].toUpperCase()}${n[0].toUpperCase()}',
+                style: const TextStyle(fontSize: 14, fontWeight: FontWeight.w600,
+                    color: AppColors.textPrimary))),
             ),
             const SizedBox(width: 14),
             Expanded(
-              child: Column(
-                crossAxisAlignment: CrossAxisAlignment.start,
-                children: [
-                  Text('$p $n',
-                      style: AppTextStyles.input
-                          .copyWith(fontWeight: FontWeight.w600)),
-                  if (temoin['date_naissance'] != null) ...[
-                    const SizedBox(height: 3),
-                    Text(temoin['date_naissance'] as String,
-                        style: AppTextStyles.label),
-                  ],
+              child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
+                Text('$p $n', style: AppTextStyles.input.copyWith(fontWeight: FontWeight.w600)),
+                if (temoin['date_naissance'] != null) ...[
+                  const SizedBox(height: 3),
+                  Text(temoin['date_naissance'] as String, style: AppTextStyles.label),
                 ],
-              ),
+              ]),
             ),
-            const Icon(Icons.chevron_right,
-                color: AppColors.textMuted, size: 20),
+            const Icon(Icons.chevron_right, color: AppColors.textMuted, size: 20),
           ],
         ),
       ),
@@ -121,11 +100,9 @@ class InfoPersoCard extends StatelessWidget {
   List<Map<String, String>> _getContacts() {
     try {
       final raw = temoin['contacts'];
-      if (raw is List) {
-        return raw.map((c) => Map<String, String>.from(c as Map)).toList();
-      } else if (raw is String && raw.isNotEmpty) {
-        final decoded = jsonDecode(raw) as List;
-        return decoded.map((c) => Map<String, String>.from(c as Map)).toList();
+      if (raw is List) return raw.map((c) => Map<String, String>.from(c as Map)).toList();
+      if (raw is String && raw.isNotEmpty) {
+        return (jsonDecode(raw) as List).map((c) => Map<String, String>.from(c as Map)).toList();
       }
     } catch (_) {}
     return [];
@@ -135,84 +112,55 @@ class InfoPersoCard extends StatelessWidget {
     showModalBottomSheet(
       context: context,
       backgroundColor: AppColors.surface,
-      shape: const RoundedRectangleBorder(
-          borderRadius: BorderRadius.vertical(top: Radius.circular(16))),
+      shape: const RoundedRectangleBorder(borderRadius: BorderRadius.vertical(top: Radius.circular(16))),
       builder: (sheetCtx) => SafeArea(
-        child: Column(
-          mainAxisSize: MainAxisSize.min,
-          children: [
-            const SizedBox(height: 8),
-            Container(
-              width: 40, height: 4,
-              decoration: BoxDecoration(
-                  color: Colors.white24,
-                  borderRadius: BorderRadius.circular(2)),
-            ),
-            const SizedBox(height: 16),
-            ListTile(
-              leading: const Icon(Icons.edit_outlined,
-                  color: AppColors.textPrimary),
-              title: const Text('Modifier',
-                  style: TextStyle(color: AppColors.textPrimary)),
-              onTap: () {
-                Navigator.of(sheetCtx).pop();
-                showModalBottomSheet(
-                  context: context,
-                  isScrollControlled: true,
-                  backgroundColor: Colors.transparent,
-                  builder: (_) =>
-                      FormulaireCreerTemoinScreen(temoin: temoin),
-                );
-              },
-            ),
-            ListTile(
-              leading: const Icon(Icons.delete_outline,
-                  color: Color(0xFFE53935)),
-              title: const Text('Supprimer le témoin',
-                  style: TextStyle(color: Color(0xFFE53935))),
-              onTap: () {
-                Navigator.of(sheetCtx).pop();
-                showDialog(
-                  context: context,
-                  builder: (dialogCtx) => AlertDialog(
-                    backgroundColor: AppColors.surface,
-                    title: const Text('Supprimer le témoin',
-                        style: TextStyle(color: AppColors.textPrimary)),
-                    content: Text(
-                      'Supprimer "${temoin["prenom"]} ${temoin["nom"]}" et tous ses témoignages ?',
-                      style: const TextStyle(color: AppColors.textMuted),
-                    ),
-                    actions: [
-                      TextButton(
-                        onPressed: () => Navigator.of(dialogCtx).pop(),
-                        child: const Text('Annuler',
-                            style: TextStyle(color: AppColors.textMuted)),
-                      ),
-                      TextButton(
-                        onPressed: () async {
-                          Navigator.of(dialogCtx).pop();
-                          final router = GoRouter.of(context);
-                          try {
-                            await ModifyInfoTemoin.delete(
-                                temoin['id'] as String);
-                            router.go('/notification_update_delete',
-                                extra: {'success': true, 'message': null});
-                          } catch (e) {
-                            router.go('/notification_update_delete',
-                                extra: {'success': false, 'message': e.toString()});
-                          }
-                        },
-                        child: const Text('Supprimer',
-                            style: TextStyle(color: Color(0xFFE53935))),
-                      ),
-                    ],
+        child: Column(mainAxisSize: MainAxisSize.min, children: [
+          const SizedBox(height: 8),
+          Container(width: 40, height: 4,
+            decoration: BoxDecoration(color: Colors.white24, borderRadius: BorderRadius.circular(2))),
+          const SizedBox(height: 16),
+          ListTile(
+            leading: const Icon(Icons.edit_outlined, color: AppColors.textPrimary),
+            title: const Text('Modifier', style: TextStyle(color: AppColors.textPrimary)),
+            onTap: () {
+              Navigator.of(sheetCtx).pop();
+              showModalBottomSheet(context: context, isScrollControlled: true,
+                backgroundColor: Colors.transparent,
+                builder: (_) => FormulaireCreerTemoinScreen(temoin: temoin));
+            },
+          ),
+          ListTile(
+            leading: const Icon(Icons.delete_outline, color: Color(0xFFE53935)),
+            title: const Text('Supprimer le témoin', style: TextStyle(color: Color(0xFFE53935))),
+            onTap: () {
+              Navigator.of(sheetCtx).pop();
+              showDialog(context: context, builder: (dialogCtx) => AlertDialog(
+                backgroundColor: AppColors.surface,
+                title: const Text('Supprimer le témoin', style: TextStyle(color: AppColors.textPrimary)),
+                content: Text('Supprimer "${temoin["prenom"]} ${temoin["nom"]}" et tous ses témoignages ?',
+                    style: const TextStyle(color: AppColors.textMuted)),
+                actions: [
+                  TextButton(onPressed: () => Navigator.of(dialogCtx).pop(),
+                    child: const Text('Annuler', style: TextStyle(color: AppColors.textMuted))),
+                  TextButton(
+                    onPressed: () async {
+                      Navigator.of(dialogCtx).pop();
+                      final router = GoRouter.of(context);
+                      try {
+                        await ModifyInfoTemoin.delete(temoin['id'] as String);
+                        router.go('/notification_update_delete', extra: {'success': true, 'message': null});
+                      } catch (e) {
+                        router.go('/notification_update_delete', extra: {'success': false, 'message': e.toString()});
+                      }
+                    },
+                    child: const Text('Supprimer', style: TextStyle(color: Color(0xFFE53935))),
                   ),
-                );
-              },
-            ),
-            const SizedBox(height: 8),
-          ],
-        ),
+                ],
+              ));
+            },
+          ),
+          const SizedBox(height: 8),
+        ]),
       ),
     );
   }
@@ -220,198 +168,114 @@ class InfoPersoCard extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final p        = temoin['prenom'] as String? ?? '?';
-    final n        = temoin['nom'] as String? ?? '?';
+    final n        = temoin['nom']    as String? ?? '?';
     final imgPath  = temoin['img_temoin'] as String?;
     final contacts = _getContacts();
 
     return Container(
-      decoration: BoxDecoration(
-        color: AppColors.surface,
+      decoration: BoxDecoration(color: AppColors.surface,
         borderRadius: BorderRadius.circular(12),
-        border: Border.all(color: const Color(0xFF333333)),
-      ),
-      child: Column(
-        crossAxisAlignment: CrossAxisAlignment.start,
-        children: [
-          Align(
-            alignment: Alignment.topRight,
-            child: TextButton(
-              onPressed: () => _showOptions(context),
-              style: TextButton.styleFrom(
-                foregroundColor: AppColors.textMuted,
-                padding: const EdgeInsets.symmetric(
-                    horizontal: 14, vertical: 10),
-              ),
-              child: const Text('Options',
-                  style: TextStyle(fontSize: 12, color: AppColors.textMuted)),
-            ),
-          ),
-          Padding(
-            padding: const EdgeInsets.fromLTRB(16, 0, 16, 16),
-            child: Column(
-              crossAxisAlignment: CrossAxisAlignment.start,
-              children: [
-                // ── Avatar + nom ───────────────────────────────────────────
-                Row(
-                  children: [
-                    Container(
-                      width: 52, height: 52,
-                      decoration: BoxDecoration(
-                        shape: BoxShape.circle,
-                        color: AppColors.inputFill,
-                        border: Border.all(color: const Color(0xFF444444)),
-                      ),
-                      child: imgPath != null && File(imgPath).existsSync()
-                          ? ClipOval(
-                              child: Image.file(File(imgPath),
-                                  fit: BoxFit.cover, width: 52, height: 52))
-                          : Center(
-                              child: Text(
-                                '${p[0].toUpperCase()}${n[0].toUpperCase()}',
-                                style: const TextStyle(
-                                    fontSize: 16,
-                                    fontWeight: FontWeight.w600,
-                                    color: AppColors.textPrimary),
-                              ),
-                            ),
-                    ),
-                    const SizedBox(width: 14),
-                    Column(
-                      crossAxisAlignment: CrossAxisAlignment.start,
-                      children: [
-                        Text('$p $n',
-                            style: AppTextStyles.input.copyWith(
-                                fontWeight: FontWeight.w700, fontSize: 16)),
-                        if (temoin['date_naissance'] != null)
-                          Text(temoin['date_naissance'] as String,
-                              style: AppTextStyles.label),
-                      ],
-                    ),
-                  ],
-                ),
-
-                // ── Localisation ───────────────────────────────────────────
-                if (temoin['departement'] != null ||
-                    temoin['region'] != null) ...[
-                  const SizedBox(height: 14),
-                  const Divider(height: 1, color: Color(0xFF333333)),
-                  const SizedBox(height: 14),
-                  Row(
-                    children: [
-                      const Icon(Icons.location_on_outlined,
-                          size: 15, color: AppColors.textMuted),
-                      const SizedBox(width: 6),
-                      Expanded(
-                        child: Text(
-                          [temoin['departement'], temoin['region']]
-                              .where((v) => v != null)
-                              .join(', '),
-                          style: AppTextStyles.label,
-                        ),
-                      ),
-                    ],
-                  ),
-                ],
-
-                // ── Contacts ───────────────────────────────────────────────
-                if (contacts.isNotEmpty) ...[
-                  const SizedBox(height: 14),
-                  const Divider(height: 1, color: Color(0xFF333333)),
-                  const SizedBox(height: 12),
-                  Text('Contacts',
-                      style: AppTextStyles.label.copyWith(
-                          fontSize: 11,
-                          fontWeight: FontWeight.w600,
-                          letterSpacing: 0.8)),
-                  const SizedBox(height: 8),
-                  ...contacts.map((c) => Padding(
-                    padding: const EdgeInsets.only(bottom: 6),
-                    child: Row(
-                      children: [
-                        const Icon(Icons.person_outline,
-                            size: 14, color: AppColors.textMuted),
-                        const SizedBox(width: 8),
-                        Text(c['nom'] ?? '',
-                            style: AppTextStyles.input
-                                .copyWith(fontSize: 13)),
-                        if ((c['telephone'] ?? '').isNotEmpty) ...[
-                          const SizedBox(width: 8),
-                          Text('·  ${c['telephone']}',
-                              style: AppTextStyles.label
-                                  .copyWith(fontSize: 12)),
-                        ],
-                      ],
-                    ),
-                  )),
-                ],
-
-                // ── RGPD ──────────────────────────────────────────────────
-                const SizedBox(height: 14),
-                const Divider(height: 1, color: Color(0xFF333333)),
-                const SizedBox(height: 12),
-                Row(
-                  children: [
-                    Icon(
-                      (temoin['accepte_rgpd'] as int? ?? 0) == 1
-                          ? Icons.shield_outlined
-                          : Icons.shield_moon_outlined,
-                      size:  14,
-                      color: (temoin['accepte_rgpd'] as int? ?? 0) == 1
-                          ? const Color(0xFF4CAF50)
-                          : AppColors.textMuted,
-                    ),
+        border: Border.all(color: const Color(0xFF333333))),
+      child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
+        Align(alignment: Alignment.topRight,
+          child: TextButton(onPressed: () => _showOptions(context),
+            style: TextButton.styleFrom(foregroundColor: AppColors.textMuted,
+                padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 10)),
+            child: const Text('Options', style: TextStyle(fontSize: 12, color: AppColors.textMuted)))),
+        Padding(
+          padding: const EdgeInsets.fromLTRB(16, 0, 16, 16),
+          child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
+            Row(children: [
+              Container(width: 52, height: 52,
+                decoration: BoxDecoration(shape: BoxShape.circle, color: AppColors.inputFill,
+                    border: Border.all(color: const Color(0xFF444444))),
+                child: imgPath != null && File(imgPath).existsSync()
+                    ? ClipOval(child: Image.file(File(imgPath), fit: BoxFit.cover, width: 52, height: 52))
+                    : Center(child: Text('${p[0].toUpperCase()}${n[0].toUpperCase()}',
+                        style: const TextStyle(fontSize: 16, fontWeight: FontWeight.w600,
+                            color: AppColors.textPrimary)))),
+              const SizedBox(width: 14),
+              Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
+                Text('$p $n', style: AppTextStyles.input.copyWith(fontWeight: FontWeight.w700, fontSize: 16)),
+                if (temoin['date_naissance'] != null)
+                  Text(temoin['date_naissance'] as String, style: AppTextStyles.label),
+              ]),
+            ]),
+            if (temoin['departement'] != null || temoin['region'] != null) ...[
+              const SizedBox(height: 14),
+              const Divider(height: 1, color: Color(0xFF333333)),
+              const SizedBox(height: 14),
+              Row(children: [
+                const Icon(Icons.location_on_outlined, size: 15, color: AppColors.textMuted),
+                const SizedBox(width: 6),
+                Expanded(child: Text(
+                  [temoin['departement'], temoin['region']].where((v) => v != null).join(', '),
+                  style: AppTextStyles.label)),
+              ]),
+            ],
+            if (contacts.isNotEmpty) ...[
+              const SizedBox(height: 14),
+              const Divider(height: 1, color: Color(0xFF333333)),
+              const SizedBox(height: 12),
+              Text('Contacts', style: AppTextStyles.label.copyWith(
+                  fontSize: 11, fontWeight: FontWeight.w600, letterSpacing: 0.8)),
+              const SizedBox(height: 8),
+              ...contacts.map((c) => Padding(
+                padding: const EdgeInsets.only(bottom: 6),
+                child: Row(children: [
+                  const Icon(Icons.person_outline, size: 14, color: AppColors.textMuted),
+                  const SizedBox(width: 8),
+                  Text(c['nom'] ?? '', style: AppTextStyles.input.copyWith(fontSize: 13)),
+                  if ((c['telephone'] ?? '').isNotEmpty) ...[
                     const SizedBox(width: 8),
-                    Text(
-                      (temoin['accepte_rgpd'] as int? ?? 0) == 1
-                          ? 'Témoin a accepté le RGPD'
-                          : 'RGPD non accepté',
-                      style: AppTextStyles.label.copyWith(
-                        fontSize: 12,
-                        color: (temoin['accepte_rgpd'] as int? ?? 0) == 1
-                            ? const Color(0xFF4CAF50)
-                            : AppColors.textMuted,
-                      ),
-                    ),
+                    Text('·  ${c['telephone']}', style: AppTextStyles.label.copyWith(fontSize: 12)),
                   ],
-                ),
-
-                // ── Signature ─────────────────────────────────────────────
-                if ((temoin['signature_url'] as String?) != null &&
-                    File(temoin['signature_url'] as String).existsSync()) ...[
-                  const SizedBox(height: 12),
-                  Text('Signature',
-                      style: AppTextStyles.label.copyWith(
-                          fontSize: 11,
-                          fontWeight: FontWeight.w600,
-                          letterSpacing: 0.8)),
-                  const SizedBox(height: 8),
-                  Container(
-                    height: 80,
-                    width:  double.infinity,
-                    decoration: BoxDecoration(
-                      color:        AppColors.inputFill,
-                      borderRadius: BorderRadius.circular(8),
-                      border: Border.all(color: const Color(0xFF333333)),
-                    ),
-                    child: ClipRRect(
-                      borderRadius: BorderRadius.circular(8),
-                      child: Image.file(
-                        File(temoin['signature_url'] as String),
-                        fit: BoxFit.contain,
-                      ),
-                    ),
-                  ),
-                ],
-              ],
-            ),
-          ),
-        ],
-      ),
+                ]),
+              )),
+            ],
+            const SizedBox(height: 14),
+            const Divider(height: 1, color: Color(0xFF333333)),
+            const SizedBox(height: 12),
+            Row(children: [
+              Icon(
+                (temoin['accepte_rgpd'] as int? ?? 0) == 1
+                    ? Icons.shield_outlined : Icons.shield_moon_outlined,
+                size: 14,
+                color: (temoin['accepte_rgpd'] as int? ?? 0) == 1
+                    ? const Color(0xFF4CAF50) : AppColors.textMuted,
+              ),
+              const SizedBox(width: 8),
+              Text(
+                (temoin['accepte_rgpd'] as int? ?? 0) == 1
+                    ? 'Témoin a accepté le RGPD' : 'RGPD non accepté',
+                style: AppTextStyles.label.copyWith(fontSize: 12,
+                  color: (temoin['accepte_rgpd'] as int? ?? 0) == 1
+                      ? const Color(0xFF4CAF50) : AppColors.textMuted),
+              ),
+            ]),
+            if ((temoin['signature_url'] as String?) != null &&
+                File(temoin['signature_url'] as String).existsSync()) ...[
+              const SizedBox(height: 12),
+              Text('Signature', style: AppTextStyles.label.copyWith(
+                  fontSize: 11, fontWeight: FontWeight.w600, letterSpacing: 0.8)),
+              const SizedBox(height: 8),
+              Container(
+                height: 80, width: double.infinity,
+                decoration: BoxDecoration(color: AppColors.inputFill,
+                    borderRadius: BorderRadius.circular(8),
+                    border: Border.all(color: const Color(0xFF333333))),
+                child: ClipRRect(borderRadius: BorderRadius.circular(8),
+                  child: Image.file(File(temoin['signature_url'] as String), fit: BoxFit.contain)),
+              ),
+            ],
+          ]),
+        ),
+      ]),
     );
   }
 }
 
-// ── CollecteEmptyState ─────────────────────────────────────────────────────────
+// ── CollecteEmptyState ────────────────────────────────────────────────────────
 
 class CollecteEmptyState extends StatelessWidget {
   const CollecteEmptyState({super.key});
@@ -419,20 +283,16 @@ class CollecteEmptyState extends StatelessWidget {
   Widget build(BuildContext context) {
     return Container(
       padding: const EdgeInsets.all(24),
-      decoration: BoxDecoration(
-        color: AppColors.surface,
-        borderRadius: BorderRadius.circular(12),
-        border: Border.all(color: const Color(0xFF333333)),
-      ),
-      child: Center(
-        child: Text('Aucun témoignage enregistré pour ce témoin.',
-            style: AppTextStyles.label, textAlign: TextAlign.center),
-      ),
+      decoration: BoxDecoration(color: AppColors.surface,
+          borderRadius: BorderRadius.circular(12),
+          border: Border.all(color: const Color(0xFF333333))),
+      child: Center(child: Text('Aucun témoignage enregistré pour ce témoin.',
+          style: AppTextStyles.label, textAlign: TextAlign.center)),
     );
   }
 }
 
-// ── CollecteCard ───────────────────────────────────────────────────────────────
+// ── CollecteCard ──────────────────────────────────────────────────────────────
 
 class CollecteCard extends StatefulWidget {
   final Map<String, dynamic> collecte;
@@ -444,10 +304,10 @@ class CollecteCard extends StatefulWidget {
 }
 
 class _CollecteCardState extends State<CollecteCard> {
-  final AudioPlayer _player    = AudioPlayer();
+  final AudioPlayer _player      = AudioPlayer();
   PlayerState       _playerState = PlayerState.stopped;
-  Duration          _position  = Duration.zero;
-  Duration          _duration  = Duration.zero;
+  Duration          _position    = Duration.zero;
+  Duration          _duration    = Duration.zero;
 
   @override
   void initState() {
@@ -494,10 +354,8 @@ class _CollecteCardState extends State<CollecteCard> {
   String _val(List<dynamic> q, String champ) {
     try {
       return q.firstWhere((e) => e['champ'] == champ,
-              orElse: () => {'valeur': ''})['valeur'] as String? ?? '';
-    } catch (_) {
-      return '';
-    }
+          orElse: () => {'valeur': ''})['valeur'] as String? ?? '';
+    } catch (_) { return ''; }
   }
 
   void _showOptions(BuildContext context) {
@@ -505,67 +363,45 @@ class _CollecteCardState extends State<CollecteCard> {
     showModalBottomSheet(
       context: context,
       backgroundColor: AppColors.surface,
-      shape: const RoundedRectangleBorder(
-          borderRadius: BorderRadius.vertical(top: Radius.circular(16))),
+      shape: const RoundedRectangleBorder(borderRadius: BorderRadius.vertical(top: Radius.circular(16))),
       builder: (sheetCtx) => SafeArea(
-        child: Column(
-          mainAxisSize: MainAxisSize.min,
-          children: [
-            const SizedBox(height: 8),
-            Container(
-              width: 40, height: 4,
-              decoration: BoxDecoration(
-                  color: Colors.white24,
-                  borderRadius: BorderRadius.circular(2)),
-            ),
-            const SizedBox(height: 16),
-            ListTile(
-              leading: const Icon(Icons.delete_outline,
-                  color: Color(0xFFE53935)),
-              title: const Text('Supprimer ce témoignage',
-                  style: TextStyle(color: Color(0xFFE53935))),
-              onTap: () {
-                Navigator.of(sheetCtx).pop();
-                showDialog(
-                  context: context,
-                  builder: (dialogCtx) => AlertDialog(
-                    backgroundColor: AppColors.surface,
-                    title: const Text('Supprimer le témoignage',
-                        style: TextStyle(color: AppColors.textPrimary)),
-                    content: const Text(
-                      'Ce témoignage et son enregistrement audio seront supprimés définitivement.',
-                      style: TextStyle(color: AppColors.textMuted),
-                    ),
-                    actions: [
-                      TextButton(
-                        onPressed: () => Navigator.of(dialogCtx).pop(),
-                        child: const Text('Annuler',
-                            style: TextStyle(color: AppColors.textMuted)),
-                      ),
-                      TextButton(
-                        onPressed: () async {
-                          Navigator.of(dialogCtx).pop();
-                          final router = GoRouter.of(context);
-                          try {
-                            await DeleteCollectQuestionnaire.delete(collectId);
-                            router.go('/notification_update_delete',
-                                extra: {'success': true, 'message': null});
-                          } catch (e) {
-                            router.go('/notification_update_delete',
-                                extra: {'success': false, 'message': e.toString()});
-                          }
-                        },
-                        child: const Text('Supprimer',
-                            style: TextStyle(color: Color(0xFFE53935))),
-                      ),
-                    ],
+        child: Column(mainAxisSize: MainAxisSize.min, children: [
+          const SizedBox(height: 8),
+          Container(width: 40, height: 4,
+            decoration: BoxDecoration(color: Colors.white24, borderRadius: BorderRadius.circular(2))),
+          const SizedBox(height: 16),
+          ListTile(
+            leading: const Icon(Icons.delete_outline, color: Color(0xFFE53935)),
+            title: const Text('Supprimer ce témoignage', style: TextStyle(color: Color(0xFFE53935))),
+            onTap: () {
+              Navigator.of(sheetCtx).pop();
+              showDialog(context: context, builder: (dialogCtx) => AlertDialog(
+                backgroundColor: AppColors.surface,
+                title: const Text('Supprimer le témoignage', style: TextStyle(color: AppColors.textPrimary)),
+                content: const Text('Ce témoignage et son enregistrement audio seront supprimés définitivement.',
+                    style: TextStyle(color: AppColors.textMuted)),
+                actions: [
+                  TextButton(onPressed: () => Navigator.of(dialogCtx).pop(),
+                    child: const Text('Annuler', style: TextStyle(color: AppColors.textMuted))),
+                  TextButton(
+                    onPressed: () async {
+                      Navigator.of(dialogCtx).pop();
+                      final router = GoRouter.of(context);
+                      try {
+                        await DeleteCollectQuestionnaire.delete(collectId);
+                        router.go('/notification_update_delete', extra: {'success': true, 'message': null});
+                      } catch (e) {
+                        router.go('/notification_update_delete', extra: {'success': false, 'message': e.toString()});
+                      }
+                    },
+                    child: const Text('Supprimer', style: TextStyle(color: Color(0xFFE53935))),
                   ),
-                );
-              },
-            ),
-            const SizedBox(height: 8),
-          ],
-        ),
+                ],
+              ));
+            },
+          ),
+          const SizedBox(height: 8),
+        ]),
       ),
     );
   }
@@ -584,157 +420,118 @@ class _CollecteCardState extends State<CollecteCard> {
     final audio    = collecte['url_audio'] as String?;
     final duree    = _formatDuree(collecte['duree_audio']);
 
+    // ── Forme d'onde sauvegardée depuis l'enregistrement ─────────────────
+    final waveRaw  = collecte['wave_data'] as String?;
+    final waveData = waveRaw != null
+        ? (jsonDecode(waveRaw) as List).map((e) => (e as num).toDouble()).toList()
+        : <double>[];
+
     return GestureDetector(
       onTap: () => showModalBottomSheet(
-        context: context,
-        isScrollControlled: true,
+        context: context, isScrollControlled: true,
         backgroundColor: Colors.transparent,
-        builder: (_) => DisplayInfoCollectScreen(collecte: collecte),
-      ),
+        builder: (_) => DisplayInfoCollectScreen(collecte: collecte)),
       child: Container(
         margin: const EdgeInsets.only(bottom: 12),
-        decoration: BoxDecoration(
-          color: AppColors.surface,
-          borderRadius: BorderRadius.circular(12),
-          border: Border.all(color: const Color(0xFF333333)),
-        ),
-        child: Column(
-          crossAxisAlignment: CrossAxisAlignment.start,
-          children: [
-            Padding(
-              padding: const EdgeInsets.fromLTRB(16, 12, 16, 0),
-              child: Row(
-                mainAxisAlignment: MainAxisAlignment.spaceBetween,
-                children: [
-                  if (widget.numero != null)
-                    Text(
-                      'Enregistrement ${widget.numero}',
-                      style: const TextStyle(
-                        fontSize:   13,
-                        fontWeight: FontWeight.w700,
-                        color:      Color(0xFFE53935),
-                        letterSpacing: 0.2,
-                      ),
-                    )
-                  else
-                    const SizedBox.shrink(),
-                  TextButton(
-                    onPressed: () => _showOptions(context),
-                    style: TextButton.styleFrom(
-                      foregroundColor: AppColors.textMuted,
-                      padding: const EdgeInsets.symmetric(
-                          horizontal: 8, vertical: 4),
-                    ),
-                    child: const Text('Options',
-                        style: TextStyle(
-                            fontSize: 12, color: AppColors.textMuted)),
-                  ),
+        decoration: BoxDecoration(color: AppColors.surface,
+            borderRadius: BorderRadius.circular(12),
+            border: Border.all(color: const Color(0xFF333333))),
+        child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
+          Padding(
+            padding: const EdgeInsets.fromLTRB(16, 12, 16, 0),
+            child: Row(mainAxisAlignment: MainAxisAlignment.spaceBetween, children: [
+              if (widget.numero != null)
+                Text('Enregistrement ${widget.numero}',
+                  style: const TextStyle(fontSize: 13, fontWeight: FontWeight.w700,
+                      color: Color(0xFFE53935), letterSpacing: 0.2))
+              else const SizedBox.shrink(),
+              TextButton(
+                onPressed: () => _showOptions(context),
+                style: TextButton.styleFrom(foregroundColor: AppColors.textMuted,
+                    padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4)),
+                child: const Text('Options',
+                    style: TextStyle(fontSize: 12, color: AppColors.textMuted))),
+            ]),
+          ),
+          Padding(
+            padding: const EdgeInsets.fromLTRB(16, 0, 16, 16),
+            child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
+              Row(children: [
+                const Icon(Icons.calendar_today_outlined, size: 13, color: AppColors.textMuted),
+                const SizedBox(width: 6),
+                Text(date, style: AppTextStyles.label),
+                if (contact.isNotEmpty) ...[
+                  const SizedBox(width: 12),
+                  const Text('·', style: TextStyle(color: AppColors.textMuted)),
+                  const SizedBox(width: 8),
+                  const Icon(Icons.person_outline, size: 13, color: AppColors.textMuted),
+                  const SizedBox(width: 4),
+                  Text(contact, style: AppTextStyles.label.copyWith(fontSize: 12)),
                 ],
-              ),
-            ),
-            Padding(
-              padding: const EdgeInsets.fromLTRB(16, 0, 16, 16),
-              child: Column(
-                crossAxisAlignment: CrossAxisAlignment.start,
-                children: [
-                  // ── Date ──────────────────────────────────────────────
-                  Row(
-                    children: [
-                      const Icon(Icons.calendar_today_outlined,
-                          size: 13, color: AppColors.textMuted),
-                      const SizedBox(width: 6),
-                      Text(date, style: AppTextStyles.label),
-                      // ── Contact présent ──────────────────────────────
-                      if (contact.isNotEmpty) ...[
-                        const SizedBox(width: 12),
-                        const Text('·',
-                            style: TextStyle(color: AppColors.textMuted)),
-                        const SizedBox(width: 8),
-                        const Icon(Icons.person_outline,
-                            size: 13, color: AppColors.textMuted),
-                        const SizedBox(width: 4),
-                        Text(contact,
-                            style: AppTextStyles.label
-                                .copyWith(fontSize: 12)),
-                      ],
-                    ],
-                  ),
-                  const SizedBox(height: 12),
-                  const Divider(height: 1, color: Color(0xFF2A2A2A)),
-                  const SizedBox(height: 12),
-                  if (lieu.isNotEmpty)
-                    _QRow(icon: Icons.location_on_outlined,
-                        label: 'Lieu', value: lieu),
-                  if (period.isNotEmpty)
-                    _QRow(icon: Icons.access_time_outlined,
-                        label: 'Période', value: period),
-                  if (accomp.isNotEmpty)
-                    _QRow(icon: Icons.people_outline,
-                        label: 'Accompagnants', value: accomp),
-                  if (sujet.isNotEmpty)
-                    _QRow(icon: Icons.notes_outlined,
-                        label: 'Sujet', value: sujet),
-                  if (themes.isNotEmpty) ...[
-                    const SizedBox(height: 10),
-                    Wrap(
-                      spacing: 6, runSpacing: 6,
-                      children: themes.split(',').map((t) => Container(
-                        padding: const EdgeInsets.symmetric(
-                            horizontal: 8, vertical: 3),
-                        decoration: BoxDecoration(
-                          color: AppColors.inputFill,
-                          borderRadius: BorderRadius.circular(4),
-                        ),
-                        child: Text(t.trim(),
-                            style: AppTextStyles.label
-                                .copyWith(fontSize: 11)),
-                      )).toList(),
-                    ),
-                  ],
-                  if (audio != null) ...[
-                    const SizedBox(height: 12),
-                    const Divider(height: 1, color: Color(0xFF2A2A2A)),
-                    const SizedBox(height: 12),
-                    _AudioPlayer(
-                      audioPath:   audio,
-                      duree:       duree,
-                      playerState: _playerState,
-                      position:    _position,
-                      duration:    _duration,
-                      onToggle:    () => _togglePlay(audio),
-                      onSeek:      (v) => _player.seek(
-                          Duration(seconds: (v * _duration.inSeconds).round())),
-                      fmtDuration: _fmtDuration,
-                    ),
-                  ],
-
-
-                ],
-              ),
-            ),
-          ],
-        ),
+              ]),
+              const SizedBox(height: 12),
+              const Divider(height: 1, color: Color(0xFF2A2A2A)),
+              const SizedBox(height: 12),
+              if (lieu.isNotEmpty)
+                _QRow(icon: Icons.location_on_outlined, label: 'Lieu', value: lieu),
+              if (period.isNotEmpty)
+                _QRow(icon: Icons.access_time_outlined, label: 'Période', value: period),
+              if (accomp.isNotEmpty)
+                _QRow(icon: Icons.people_outline, label: 'Accompagnants', value: accomp),
+              if (sujet.isNotEmpty)
+                _QRow(icon: Icons.notes_outlined, label: 'Sujet', value: sujet),
+              if (themes.isNotEmpty) ...[
+                const SizedBox(height: 10),
+                Wrap(spacing: 6, runSpacing: 6,
+                  children: themes.split(',').map((t) => Container(
+                    padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 3),
+                    decoration: BoxDecoration(color: AppColors.inputFill,
+                        borderRadius: BorderRadius.circular(4)),
+                    child: Text(t.trim(), style: AppTextStyles.label.copyWith(fontSize: 11)),
+                  )).toList()),
+              ],
+              if (audio != null) ...[
+                const SizedBox(height: 12),
+                const Divider(height: 1, color: Color(0xFF2A2A2A)),
+                const SizedBox(height: 12),
+                _AudioPlayer(
+                  audioPath:   audio,
+                  duree:       duree,
+                  waveData:    waveData,  // ← vraie forme d'onde
+                  playerState: _playerState,
+                  position:    _position,
+                  duration:    _duration,
+                  onToggle:    () => _togglePlay(audio),
+                  onSeek:      (v) => _player.seek(
+                      Duration(seconds: (v * _duration.inSeconds).round())),
+                  fmtDuration: _fmtDuration,
+                ),
+              ],
+            ]),
+          ),
+        ]),
       ),
     );
   }
 }
 
-
-// ── AudioPlayer Widget ─────────────────────────────────────────────────────────
+// ── AudioPlayer Widget ────────────────────────────────────────────────────────
 
 class _AudioPlayer extends StatelessWidget {
-  final String        audioPath;
-  final String        duree;
-  final PlayerState   playerState;
-  final Duration      position;
-  final Duration      duration;
-  final VoidCallback  onToggle;
+  final String             audioPath;
+  final String             duree;
+  final List<double>       waveData;    // ← forme d'onde réelle
+  final PlayerState        playerState;
+  final Duration           position;
+  final Duration           duration;
+  final VoidCallback       onToggle;
   final void Function(double) onSeek;
   final String Function(Duration) fmtDuration;
 
   const _AudioPlayer({
     required this.audioPath,
     required this.duree,
+    required this.waveData,
     required this.playerState,
     required this.position,
     required this.duration,
@@ -747,13 +544,12 @@ class _AudioPlayer extends StatelessWidget {
   Widget build(BuildContext context) {
     final isPlaying = playerState == PlayerState.playing;
     final progress  = duration.inSeconds > 0
-        ? position.inSeconds / duration.inSeconds
-        : 0.0;
+        ? position.inSeconds / duration.inSeconds : 0.0;
 
     return Column(
       crossAxisAlignment: CrossAxisAlignment.start,
       children: [
-        // ── Waveform de lecture ────────────────────────────────────────────
+        // ── Waveform réelle de l'enregistrement ───────────────────────
         GestureDetector(
           onTapDown: (d) {
             final box = context.findRenderObject() as RenderBox?;
@@ -762,50 +558,35 @@ class _AudioPlayer extends StatelessWidget {
             onSeek(frac.clamp(0.0, 1.0));
           },
           child: WaveformDisplay(
-            waveData:  const [],   // forme d'onde synthétique
+            waveData:  waveData,   // ← remplace const []
             progress:  progress,
             isPlaying: isPlaying,
           ),
         ),
-
         const SizedBox(height: 8),
-
-        // ── Contrôles ─────────────────────────────────────────────────────
-        Row(
-          children: [
-            GestureDetector(
-              onTap: onToggle,
-              child: Container(
-                width: 34, height: 34,
-                decoration: BoxDecoration(
-                  shape: BoxShape.circle,
-                  color: isPlaying
-                      ? const Color(0xFFE53935).withOpacity(0.15)
-                      : AppColors.surface,
-                  border: Border.all(
-                    color: isPlaying
-                        ? const Color(0xFFE53935)
-                        : const Color(0xFF444444),
-                  ),
-                ),
-                child: Icon(
-                  isPlaying ? Icons.pause : Icons.play_arrow,
-                  size:  17,
-                  color: isPlaying
-                      ? const Color(0xFFE53935)
-                      : AppColors.textMuted,
-                ),
+        Row(children: [
+          GestureDetector(
+            onTap: onToggle,
+            child: Container(
+              width: 34, height: 34,
+              decoration: BoxDecoration(
+                shape: BoxShape.circle,
+                color: isPlaying
+                    ? const Color(0xFFE53935).withOpacity(0.15) : AppColors.surface,
+                border: Border.all(
+                  color: isPlaying ? const Color(0xFFE53935) : const Color(0xFF444444)),
               ),
+              child: Icon(isPlaying ? Icons.pause : Icons.play_arrow,
+                size: 17,
+                color: isPlaying ? const Color(0xFFE53935) : AppColors.textMuted),
             ),
-            const SizedBox(width: 10),
-            Text(fmtDuration(position),
-                style: AppTextStyles.label.copyWith(fontSize: 11)),
-            const Spacer(),
-            if (duree.isNotEmpty)
-              Text(duree,
-                  style: AppTextStyles.label.copyWith(fontSize: 11)),
-          ],
-        ),
+          ),
+          const SizedBox(width: 10),
+          Text(fmtDuration(position), style: AppTextStyles.label.copyWith(fontSize: 11)),
+          const Spacer(),
+          if (duree.isNotEmpty)
+            Text(duree, style: AppTextStyles.label.copyWith(fontSize: 11)),
+        ]),
       ],
     );
   }
@@ -813,28 +594,20 @@ class _AudioPlayer extends StatelessWidget {
 
 class _QRow extends StatelessWidget {
   final IconData icon;
-  final String label;
-  final String value;
-  const _QRow(
-      {required this.icon, required this.label, required this.value});
+  final String   label;
+  final String   value;
+  const _QRow({required this.icon, required this.label, required this.value});
 
   @override
   Widget build(BuildContext context) {
     return Padding(
       padding: const EdgeInsets.only(bottom: 8),
-      child: Row(
-        crossAxisAlignment: CrossAxisAlignment.start,
-        children: [
-          Icon(icon, size: 14, color: AppColors.textMuted),
-          const SizedBox(width: 8),
-          Text('$label : ',
-              style: AppTextStyles.label.copyWith(fontSize: 12)),
-          Expanded(
-            child: Text(value,
-                style: AppTextStyles.input.copyWith(fontSize: 13)),
-          ),
-        ],
-      ),
+      child: Row(crossAxisAlignment: CrossAxisAlignment.start, children: [
+        Icon(icon, size: 14, color: AppColors.textMuted),
+        const SizedBox(width: 8),
+        Text('$label : ', style: AppTextStyles.label.copyWith(fontSize: 12)),
+        Expanded(child: Text(value, style: AppTextStyles.input.copyWith(fontSize: 13))),
+      ]),
     );
   }
 }

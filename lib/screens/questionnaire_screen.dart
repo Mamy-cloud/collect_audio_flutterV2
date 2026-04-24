@@ -94,13 +94,18 @@ class _QuestionnaireScreenState extends State<QuestionnaireScreen> {
       isScrollControlled: true,
       backgroundColor:    Colors.transparent,
       builder: (_) => AudioRecordSheet(
-        onSave: (audioPath, dureeSecondes) =>
-            _saveAll(audioPath, dureeSecondes),
+        // ── Reçoit maintenant aussi waveData ──────────────────────────
+        onSave: (audioPath, dureeSecondes, waveData) =>
+            _saveAll(audioPath, dureeSecondes, waveData),
       ),
     );
   }
 
-  Future<void> _saveAll(String audioPath, int dureeSecondes) async {
+  Future<void> _saveAll(
+    String       audioPath,
+    int          dureeSecondes,
+    List<double> waveData,       // ← nouveau paramètre
+  ) async {
     setState(() => _isLoading = true);
     try {
       await SaveQuestionnaire.save(
@@ -116,6 +121,7 @@ class _QuestionnaireScreenState extends State<QuestionnaireScreen> {
                             ? null : _sujetCtrl.text.trim(),
         urlAudio:       audioPath,
         dureeAudio:     dureeSecondes,
+        waveData:       jsonEncode(waveData),  // ← sérialise en JSON
       );
 
       if (!mounted) return;
@@ -127,7 +133,6 @@ class _QuestionnaireScreenState extends State<QuestionnaireScreen> {
     } catch (e) {
       if (!mounted) return;
       setState(() => _isLoading = false);
-      if (!mounted) return;
       context.go('/notification_save_collect', extra: {
         'success': false,
         'message': e.toString(),
@@ -169,11 +174,8 @@ class _QuestionnaireScreenState extends State<QuestionnaireScreen> {
         elevation:       0,
         title: const Text(
           'Nouveau questionnaire',
-          style: TextStyle(
-            fontSize:   17,
-            fontWeight: FontWeight.w600,
-            color:      AppColors.textPrimary,
-          ),
+          style: TextStyle(fontSize: 17, fontWeight: FontWeight.w600,
+              color: AppColors.textPrimary),
         ),
       ),
       body: _isLoading
@@ -183,15 +185,10 @@ class _QuestionnaireScreenState extends State<QuestionnaireScreen> {
               child: Column(
                 crossAxisAlignment: CrossAxisAlignment.start,
                 children: [
-
                   _loadingTemoins
-                    ? const SizedBox(
-                        height: 52,
-                        child: Center(
-                          child: CircularProgressIndicator(
-                              strokeWidth: 2, color: AppColors.textMuted),
-                        ),
-                      )
+                    ? const SizedBox(height: 52,
+                        child: Center(child: CircularProgressIndicator(
+                            strokeWidth: 2, color: AppColors.textMuted)))
                     : TemoinDropdown(
                         temoins:   _temoins,
                         selected:  _temoinSelectionne,
@@ -200,54 +197,31 @@ class _QuestionnaireScreenState extends State<QuestionnaireScreen> {
                           _contactSelectionne = null;
                         }),
                       ),
-
                   const SizedBox(height: 14),
-
-                  if (_temoinSelectionne != null &&
-                      _contactsTemoin.isNotEmpty) ...[
+                  if (_temoinSelectionne != null && _contactsTemoin.isNotEmpty) ...[
                     ContactSelectWidget(
                       contacts:  _contactsTemoin,
                       selected:  _contactSelectionne,
-                      onChanged: (v) =>
-                          setState(() => _contactSelectionne = v),
+                      onChanged: (v) => setState(() => _contactSelectionne = v),
                     ),
                     const SizedBox(height: 14),
                   ],
-
-                  QTextField(
-                    label:      'Accompagnants',
-                    hint:       'ex. Sa fille était présente dans la pièce',
-                    controller: _accompagnantCtrl,
-                  ),
-
+                  QTextField(label: 'Accompagnants',
+                    hint: 'ex. Sa fille était présente dans la pièce',
+                    controller: _accompagnantCtrl),
                   const SizedBox(height: 24),
-
                   _SectionTitle('Où ?'),
                   const SizedBox(height: 10),
-
-                  QSelect(
-                    label:     'Lieu',
-                    value:     _lieu,
-                    options:   _lieuxOptions,
-                    hint:      'Sélectionner un lieu…',
-                    onChanged: (v) => setState(() => _lieu = v),
-                  ),
-
+                  QSelect(label: 'Lieu', value: _lieu, options: _lieuxOptions,
+                    hint: 'Sélectionner un lieu…',
+                    onChanged: (v) => setState(() => _lieu = v)),
                   const SizedBox(height: 24),
-
                   _SectionTitle('Quand ?'),
                   const SizedBox(height: 10),
-
-                  QSelect(
-                    label:     'Période évoquée',
-                    value:     _periodeEvoquee,
-                    options:   _periodesOptions,
-                    hint:      'Sélectionner une période…',
-                    onChanged: (v) => setState(() => _periodeEvoquee = v),
-                  ),
-
+                  QSelect(label: 'Période évoquée', value: _periodeEvoquee,
+                    options: _periodesOptions, hint: 'Sélectionner une période…',
+                    onChanged: (v) => setState(() => _periodeEvoquee = v)),
                   const SizedBox(height: 24),
-
                   ThemesTagGrid(
                     selected: _themes,
                     onToggle: (theme, isSel) {
@@ -256,21 +230,13 @@ class _QuestionnaireScreenState extends State<QuestionnaireScreen> {
                       });
                     },
                   ),
-
                   const SizedBox(height: 24),
-
                   _SectionTitle('Quoi ?'),
                   const SizedBox(height: 10),
-
-                  QTextField(
-                    label:      'Sujet du jour',
-                    hint:       'ex. Récit de son arrivée au village en 1964',
-                    controller: _sujetCtrl,
-                    maxLines:   3,
-                  ),
-
+                  QTextField(label: 'Sujet du jour',
+                    hint: 'ex. Récit de son arrivée au village en 1964',
+                    controller: _sujetCtrl, maxLines: 3),
                   const SizedBox(height: 32),
-
                   PrendreTemoignageButton(onPressed: _openAudioSheet),
                 ],
               ),
@@ -292,14 +258,8 @@ class _SectionTitle extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    return Text(
-      text,
-      style: const TextStyle(
-        fontSize:      13,
-        fontWeight:    FontWeight.w600,
-        color:         AppColors.textMuted,
-        letterSpacing: 0.8,
-      ),
-    );
+    return Text(text,
+      style: const TextStyle(fontSize: 13, fontWeight: FontWeight.w600,
+          color: AppColors.textMuted, letterSpacing: 0.8));
   }
 }

@@ -19,6 +19,7 @@ class SaveQuestionnaire {
     int                   dureeAudio   = 0,
     String?               signatureUrl,
     bool                  accepteRgpd  = false,
+    String?               waveData,    // ← forme d'onde JSON
   }) async {
     final db = CreateTableTemoin.db;
     final id = _uuid.v4();
@@ -40,7 +41,8 @@ class SaveQuestionnaire {
         'user_id':       userId,
         'questionnaire': jsonEncode(questionnaire),
         'url_audio':     urlAudio,
-      'duree_audio':   dureeAudio,
+        'duree_audio':   dureeAudio,
+        'wave_data':     waveData,   // ← sauvegarde la forme d'onde
         'created_at':    DateTime.now().toIso8601String(),
       },
     );
@@ -61,10 +63,8 @@ class SaveQuestionnaire {
     );
   }
 
-  // Filtrage côté Dart — évite json_extract non supporté sur Android ancien
   static Future<List<Map<String, dynamic>>> getByUser(String userId) async {
-    final db = CreateTableTemoin.db;
-
+    final db   = CreateTableTemoin.db;
     final rows = await db.query(
       'collect_info_from_temoin',
       where:     'user_id = ?',
@@ -79,7 +79,6 @@ class SaveQuestionnaire {
         final q = jsonDecode(r['questionnaire'] as String) as List<dynamic>;
         r['questionnaire'] = q;
 
-        // Récupère le temoin_id depuis le questionnaire
         final temoinId = q.isNotEmpty && q.first['champ'] == 'temoin_id'
             ? q.first['valeur'] as String?
             : null;

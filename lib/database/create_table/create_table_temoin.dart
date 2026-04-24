@@ -1,6 +1,6 @@
 // create_table_temoin.dart
 // Android/iOS → sqflite natif
-// Version 11 — ajout id_questionnaire dans collect_info_from_temoin
+// Version 12 — ajout wave_data dans collect_info_from_temoin
 
 import 'package:sqflite/sqflite.dart';
 import 'package:path/path.dart';
@@ -13,16 +13,13 @@ class CreateTableTemoin {
     return _db!;
   }
 
-  // ─────────────────────────────────────────────
-  // INIT DATABASE
-  // ─────────────────────────────────────────────
   static Future<void> init() async {
     final dbPath = await getDatabasesPath();
     final path   = join(dbPath, 'mon_app.db');
 
     _db = await openDatabase(
       path,
-      version: 11,
+      version: 12,
 
       onCreate: (db, version) async {
         await _createLoginUser(db);
@@ -31,72 +28,42 @@ class CreateTableTemoin {
       },
 
       onUpgrade: (db, oldVersion, newVersion) async {
-
         if (oldVersion < 2) {
-          await db.execute(
-            'ALTER TABLE info_perso_temoin ADD COLUMN img_temoin TEXT',
-          );
+          await db.execute('ALTER TABLE info_perso_temoin ADD COLUMN img_temoin TEXT');
         }
-
         if (oldVersion < 3) {
           await _createLoginUser(db);
           await _createCollectInfoFromTemoin(db);
         }
-
         if (oldVersion < 4) {
-          await db.execute(
-            "ALTER TABLE collect_info_from_temoin ADD COLUMN synced INTEGER NOT NULL DEFAULT 0",
-          );
+          await db.execute("ALTER TABLE collect_info_from_temoin ADD COLUMN synced INTEGER NOT NULL DEFAULT 0");
         }
-
         if (oldVersion < 5) {
-          await db.execute(
-            "ALTER TABLE info_perso_temoin ADD COLUMN contacts TEXT NOT NULL DEFAULT '[]'",
-          );
+          await db.execute("ALTER TABLE info_perso_temoin ADD COLUMN contacts TEXT NOT NULL DEFAULT '[]'");
         }
-
         if (oldVersion < 6) {
-          await db.execute(
-            "ALTER TABLE info_perso_temoin ADD COLUMN user_id TEXT",
-          );
+          await db.execute("ALTER TABLE info_perso_temoin ADD COLUMN user_id TEXT");
         }
-
         if (oldVersion < 7) {
-          await db.execute(
-            "ALTER TABLE collect_info_from_temoin ADD COLUMN duree_audio INTEGER NOT NULL DEFAULT 0",
-          );
+          await db.execute("ALTER TABLE collect_info_from_temoin ADD COLUMN duree_audio INTEGER NOT NULL DEFAULT 0");
         }
-
         if (oldVersion < 8) {
-          await db.execute(
-            "ALTER TABLE collect_info_from_temoin ADD COLUMN signature_url TEXT",
-          );
-          await db.execute(
-            "ALTER TABLE collect_info_from_temoin ADD COLUMN accepte_rgpd INTEGER NOT NULL DEFAULT 0",
-          );
+          await db.execute("ALTER TABLE collect_info_from_temoin ADD COLUMN signature_url TEXT");
+          await db.execute("ALTER TABLE collect_info_from_temoin ADD COLUMN accepte_rgpd INTEGER NOT NULL DEFAULT 0");
         }
-
         if (oldVersion < 9) {
-          await db.execute(
-            "ALTER TABLE info_perso_temoin ADD COLUMN signature_url TEXT",
-          );
-          await db.execute(
-            "ALTER TABLE info_perso_temoin ADD COLUMN accepte_rgpd INTEGER NOT NULL DEFAULT 0",
-          );
+          await db.execute("ALTER TABLE info_perso_temoin ADD COLUMN signature_url TEXT");
+          await db.execute("ALTER TABLE info_perso_temoin ADD COLUMN accepte_rgpd INTEGER NOT NULL DEFAULT 0");
         }
-
         if (oldVersion < 10) {
-          await db.execute(
-            "ALTER TABLE login_user ADD COLUMN last_login TEXT",
-          );
+          await db.execute("ALTER TABLE login_user ADD COLUMN last_login TEXT");
         }
-
         if (oldVersion < 11) {
-          // id_questionnaire — identifiant unique de chaque collecte
-          // utilisé pour éviter les doublons lors de la synchronisation
-          await db.execute(
-            "ALTER TABLE collect_info_from_temoin ADD COLUMN id_questionnaire TEXT",
-          );
+          await db.execute("ALTER TABLE collect_info_from_temoin ADD COLUMN id_questionnaire TEXT");
+        }
+        if (oldVersion < 12) {
+          // wave_data — forme d'onde sauvegardée pour affichage dans save_local
+          await db.execute("ALTER TABLE collect_info_from_temoin ADD COLUMN wave_data TEXT");
         }
       },
 
@@ -106,9 +73,6 @@ class CreateTableTemoin {
     );
   }
 
-  // ─────────────────────────────────────────────
-  // TABLE LOGIN USER
-  // ─────────────────────────────────────────────
   static Future<void> _createLoginUser(Database db) async {
     await db.execute('''
       CREATE TABLE IF NOT EXISTS login_user (
@@ -121,7 +85,6 @@ class CreateTableTemoin {
     ''');
   }
 
-  // ─────────────────────────────────────────────
   static Future<void> _createInfoPersoTemoin(Database db) async {
     await db.execute('''
       CREATE TABLE IF NOT EXISTS info_perso_temoin (
@@ -142,7 +105,6 @@ class CreateTableTemoin {
     ''');
   }
 
-  // ─────────────────────────────────────────────
   static Future<void> _createCollectInfoFromTemoin(Database db) async {
     await db.execute('''
       CREATE TABLE IF NOT EXISTS collect_info_from_temoin (
@@ -153,11 +115,11 @@ class CreateTableTemoin {
         duree_audio      INTEGER NOT NULL DEFAULT 0,
         synced           INTEGER NOT NULL DEFAULT 0,
         id_questionnaire TEXT UNIQUE,
+        wave_data        TEXT,
         created_at       TEXT NOT NULL,
         FOREIGN KEY (user_id) REFERENCES login_user(id)
       )
     ''');
-
     await db.execute('''
       CREATE TABLE IF NOT EXISTS info_perso_temoin_collect (
         id          TEXT PRIMARY KEY,
@@ -168,9 +130,7 @@ class CreateTableTemoin {
     ''');
   }
 
-  // ─────────────────────────────────────────────
-  // SESSION MANAGEMENT
-  // ─────────────────────────────────────────────
+  // ── SESSION ───────────────────────────────────────────────────────────────
 
   static Future<Map<String, dynamic>?> getLastLoggedUser() async {
     final result = await _db!.query(
@@ -186,21 +146,15 @@ class CreateTableTemoin {
     await _db!.update(
       'login_user',
       {'last_login': DateTime.now().toIso8601String()},
-      where:     'id = ?',
-      whereArgs: [id],
+      where: 'id = ?', whereArgs: [id],
     );
   }
 
   static Future<void> clearLastLogin() async {
-    await _db!.update(
-      'login_user',
-      {'last_login': null},
-    );
+    await _db!.update('login_user', {'last_login': null});
   }
 
-  // ─────────────────────────────────────────────
-  // SYNC — id_questionnaire
-  // ─────────────────────────────────────────────
+  // ── SYNC ──────────────────────────────────────────────────────────────────
 
   static Future<List<String>> getUnsyncedIdQuestionnaires() async {
     final result = await _db!.query(
@@ -209,23 +163,17 @@ class CreateTableTemoin {
       where:     'synced = ? AND id_questionnaire IS NOT NULL',
       whereArgs: [0],
     );
-    return result
-        .map((r) => r['id_questionnaire'] as String)
-        .toList();
+    return result.map((r) => r['id_questionnaire'] as String).toList();
   }
 
-  static Future<void> markSyncedByIdQuestionnaire(
-      String idQuestionnaire) async {
+  static Future<void> markSyncedByIdQuestionnaire(String idQuestionnaire) async {
     await _db!.update(
-      'collect_info_from_temoin',
-      {'synced': 1},
-      where:     'id_questionnaire = ?',
-      whereArgs: [idQuestionnaire],
+      'collect_info_from_temoin', {'synced': 1},
+      where: 'id_questionnaire = ?', whereArgs: [idQuestionnaire],
     );
   }
 
-  static Future<List<Map<String, dynamic>>> getUnsyncedCollectesByIds(
-      List<String> ids) async {
+  static Future<List<Map<String, dynamic>>> getUnsyncedCollectesByIds(List<String> ids) async {
     if (ids.isEmpty) return [];
     final placeholders = ids.map((_) => '?').join(',');
     return await _db!.query(
@@ -235,28 +183,21 @@ class CreateTableTemoin {
     );
   }
 
-  // ─────────────────────────────────────────────
-  // LOGIN
-  // ─────────────────────────────────────────────
+  // ── LOGIN ─────────────────────────────────────────────────────────────────
 
-  static Future<Map<String, dynamic>?> getUserByIdentifiant(
-      String identifiant) async {
+  static Future<Map<String, dynamic>?> getUserByIdentifiant(String identifiant) async {
     final result = await _db!.query(
       'login_user',
-      where:     'identifiant = ?',
-      whereArgs: [identifiant],
-      limit:     1,
+      where: 'identifiant = ?', whereArgs: [identifiant], limit: 1,
     );
     return result.isNotEmpty ? result.first : null;
   }
 
-  static Future<Map<String, dynamic>?> login(
-      String identifiant, String password) async {
+  static Future<Map<String, dynamic>?> login(String identifiant, String password) async {
     final result = await _db!.query(
       'login_user',
-      where:     'identifiant = ? AND password = ?',
-      whereArgs: [identifiant, password],
-      limit:     1,
+      where: 'identifiant = ? AND password = ?',
+      whereArgs: [identifiant, password], limit: 1,
     );
     return result.isNotEmpty ? result.first : null;
   }
