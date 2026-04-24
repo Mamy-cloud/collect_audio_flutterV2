@@ -403,8 +403,7 @@ class _WaveformPainter extends CustomPainter {
 
   @override
   void paint(Canvas canvas, Size size) {
-    final centerY  = size.height * 0.75;
-    final cursorX  = size.width / 2; // curseur fixe au milieu
+    final centerY = size.height * 0.75;
 
     // ── Ligne de fond ─────────────────────────────────────────────
     canvas.drawLine(Offset(0, centerY), Offset(size.width, centerY),
@@ -414,60 +413,54 @@ class _WaveformPainter extends CustomPainter {
         : isPaused ? const Color(0xFFE53935).withValues(alpha: 0.6)
         : const Color(0xFF555555);
 
-    const double cycleW = 14.0;
-    final maxCycles = (cursorX / cycleW).floor(); // moitié gauche seulement
+    const double barW = 4.0;
+    const double gap  = 3.0;
+    const double step = barW + gap;
+    final maxBars = (size.width / step).floor();
 
-    // ── Pics accumulés — défilent vers la gauche ──────────────────
-    if (waveData.isNotEmpty) {
-      final visible = waveData.length > maxCycles
-          ? waveData.sublist(waveData.length - maxCycles) : waveData;
+    // ── Toutes les barres s'accumulent de gauche à droite ─────────
+    final visible = waveData.length > maxBars
+        ? waveData.sublist(waveData.length - maxBars) : waveData;
 
-      // Le dernier sample est toujours juste avant le curseur
-      final offsetX = cursorX - visible.length * cycleW;
-      final path = Path()..moveTo(offsetX, centerY);
+    for (int i = 0; i < visible.length; i++) {
+      final amp  = visible[i];
+      final x    = i * step;
+      final h    = amp < 0.01 ? 2.0 : max(2.0, amp * size.height * 0.85);
 
-      for (int i = 0; i < visible.length; i++) {
-        final amp = visible[i];
-        final x0  = offsetX + i * cycleW;
-        final xM  = x0 + cycleW / 2;
-        final x1  = x0 + cycleW;
-        final h   = amp < 0.01 ? 0.0 : amp * size.height * 0.85;
-
-        if (h < 1.0) {
-          path.lineTo(x1, centerY);
-        } else {
-          path.quadraticBezierTo(x0 + cycleW * 0.25, centerY + h * 0.5, xM, centerY - h);
-          path.quadraticBezierTo(x0 + cycleW * 0.75, centerY + h * 0.5, x1, centerY);
-        }
-      }
-
-      canvas.drawPath(path, Paint()
-        ..color       = color
-        ..strokeWidth = 1.8
-        ..strokeCap   = StrokeCap.round
-        ..strokeJoin  = StrokeJoin.round
-        ..style       = PaintingStyle.stroke);
+      canvas.drawRRect(
+        RRect.fromRectAndRadius(
+          Rect.fromLTWH(x, centerY - h, barW, h),
+          const Radius.circular(1),
+        ),
+        Paint()..color = color..style = PaintingStyle.fill,
+      );
     }
 
-    // ── Zone grise pointillée — toujours sur la moitié droite ─────
-    final dashPaint = Paint()
-      ..color       = const Color(0xFF2E2E2E)
-      ..strokeWidth = 1.0
-      ..strokeCap   = StrokeCap.round;
+    // ── Curseur à la position actuelle ────────────────────────────
+    final cursorX = (visible.length * step).clamp(0.0, size.width);
 
-    double x = cursorX;
-    bool draw = true;
-    while (x < size.width) {
-      final xEnd = (x + 4).clamp(0.0, size.width);
-      if (draw) canvas.drawLine(Offset(x, centerY), Offset(xEnd, centerY), dashPaint);
-      x += 8;
-      draw = !draw;
-    }
-
-    // ── Curseur fixe au milieu ────────────────────────────────────
     if (isRecording || isPaused) {
       canvas.drawLine(Offset(cursorX, 0), Offset(cursorX, size.height),
         Paint()..color = const Color(0xFFFF5252)..strokeWidth = 1.5);
+    }
+
+    // ── Zone grise pointillée à droite ────────────────────────────
+    if (cursorX < size.width) {
+      double x = cursorX + step;
+      bool draw = true;
+      while (x < size.width) {
+        if (draw) {
+          canvas.drawRRect(
+            RRect.fromRectAndRadius(
+              Rect.fromLTWH(x, centerY - 2, barW, 2),
+              const Radius.circular(1),
+            ),
+            Paint()..color = const Color(0xFF2E2E2E)..style = PaintingStyle.fill,
+          );
+        }
+        x += step;
+        draw = !draw;
+      }
     }
   }
 
