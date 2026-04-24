@@ -1,5 +1,5 @@
 // audio_record.dart — VERSION ANDROID/iOS
-// flutter_sound pour l'enregistrement
+// flutter_sound pour l'enregistrement.
 // Waveform basé sur la vraie amplitude du microphone
 
 import 'dart:async';
