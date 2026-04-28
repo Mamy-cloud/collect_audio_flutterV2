@@ -65,7 +65,7 @@ class LoginApiService {
     try {
       final response = await http
           .head(Uri.parse('https://www.google.com'))
-          .timeout(const Duration(seconds: 14));
+          .timeout(const Duration(seconds: 4));
       return response.statusCode < 500;
     } catch (_) {
       return false;

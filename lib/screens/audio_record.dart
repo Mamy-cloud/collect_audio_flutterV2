@@ -14,7 +14,6 @@ import '../services/audio_device_service.dart';
 import '../widgets/global/app_styles.dart';
 
 class AudioRecordSheet extends StatefulWidget {
-  // ── waveData ajouté au callback pour sauvegarder la forme d'onde ──────────
   final void Function(String audioPath, int dureeSecondes, List<double> waveData) onSave;
   const AudioRecordSheet({super.key, required this.onSave});
 
@@ -60,7 +59,6 @@ class _AudioRecordSheetState extends State<AudioRecordSheet> {
       if (rawDb == null) return;
       final db = rawDb.toDouble();
 
-      // ── Calibration figée après 30 frames ────────────────────────────
       if (_calibrateCount < _calibrateFrames) {
         if (!_calibrated) {
           _minDbObserved = db;
@@ -80,7 +78,6 @@ class _AudioRecordSheetState extends State<AudioRecordSheet> {
 
       double normalized = ((db - effectiveMin) / effectiveRange).clamp(0.0, 1.0);
 
-      // ── Seuil silence ─────────────────────────────────────────────────
       if (normalized < 0.62) {
         final smoothed = _lastAmp * 0.08;
         _lastAmp = smoothed;
@@ -88,12 +85,10 @@ class _AudioRecordSheetState extends State<AudioRecordSheet> {
         return;
       }
 
-      // ── Remappe 0.62..1.0 → 0.0..1.0 ────────────────────────────────
       normalized = ((normalized - 0.62) / 0.38).clamp(0.0, 1.0);
       if (normalized < 0.05) normalized = 0.0;
       if (normalized > 0.0) normalized = pow(normalized, 0.6).toDouble();
 
-      // ── Lissage asymétrique ───────────────────────────────────────────
       final double alpha    = normalized > _lastAmp ? 0.8 : 0.15;
       final double smoothed = _lastAmp * (1 - alpha) + normalized * alpha;
       _lastAmp = smoothed;
@@ -182,7 +177,6 @@ class _AudioRecordSheetState extends State<AudioRecordSheet> {
 
   void _saveTestimony() {
     if (_finalPath != null) {
-      // ── Passe aussi _waveData au callback ─────────────────────────────
       widget.onSave(_finalPath!, _elapsed.inSeconds, List<double>.from(_waveData));
       Navigator.of(context).pop();
     }
@@ -242,7 +236,8 @@ class _AudioRecordSheetState extends State<AudioRecordSheet> {
               ),
             ),
             const Text('Témoignage oral',
-              style: TextStyle(fontSize: 18, fontWeight: FontWeight.w700, color: AppColors.textPrimary),
+              style: TextStyle(fontSize: 18, fontWeight: FontWeight.w700,
+                  color: AppColors.textPrimary),
             ),
             const SizedBox(height: 20),
             _buildDeviceSelector(),
@@ -303,8 +298,9 @@ class _AudioRecordSheetState extends State<AudioRecordSheet> {
             child: ClipRect(
               child: CustomPaint(
                 painter: _WaveformPainter(
-                  waveData: _waveData, isRecording: isRecording,
-                  isPaused: _status == _Status.paused,
+                  waveData:    _waveData,
+                  isRecording: isRecording,
+                  isPaused:    _status == _Status.paused,
                 ),
                 child: const SizedBox.expand(),
               ),
@@ -313,7 +309,8 @@ class _AudioRecordSheetState extends State<AudioRecordSheet> {
           const SizedBox(height: 16),
           Text(_elapsedLabel,
             style: const TextStyle(fontSize: 36, fontWeight: FontWeight.w300,
-              color: AppColors.textPrimary, fontFeatures: [FontFeature.tabularFigures()]),
+              color: AppColors.textPrimary,
+              fontFeatures: [FontFeature.tabularFigures()]),
           ),
           const SizedBox(height: 8),
           Row(
@@ -327,7 +324,8 @@ class _AudioRecordSheetState extends State<AudioRecordSheet> {
                 ),
               Text(_statusLabel(_status),
                 style: TextStyle(fontSize: 12,
-                  color: isRecording ? const Color(0xFFE53935) : AppColors.textMuted),
+                  color: isRecording
+                      ? const Color(0xFFE53935) : AppColors.textMuted),
               ),
             ],
           ),
@@ -349,7 +347,8 @@ class _AudioRecordSheetState extends State<AudioRecordSheet> {
     if (_loadingDevices) {
       return const SizedBox(height: 44,
         child: Center(child: SizedBox(width: 16, height: 16,
-          child: CircularProgressIndicator(strokeWidth: 2, color: AppColors.textMuted))));
+          child: CircularProgressIndicator(
+              strokeWidth: 2, color: AppColors.textMuted))));
     }
     if (_devices.length <= 1) return const SizedBox.shrink();
     return Container(
@@ -374,9 +373,11 @@ class _AudioRecordSheetState extends State<AudioRecordSheet> {
                   child: Row(children: [
                     Icon(d.isUsb ? Icons.usb_outlined
                       : d.isBluetooth ? Icons.bluetooth_outlined
-                      : Icons.mic_outlined, size: 14, color: AppColors.textMuted),
+                      : Icons.mic_outlined,
+                      size: 14, color: AppColors.textMuted),
                     const SizedBox(width: 8),
-                    Expanded(child: Text(d.name, overflow: TextOverflow.ellipsis)),
+                    Expanded(child: Text(d.name,
+                        overflow: TextOverflow.ellipsis)),
                   ]),
                 )).toList(),
                 onChanged: _status == _Status.idle
@@ -397,8 +398,15 @@ class _WaveformPainter extends CustomPainter {
   final bool         isRecording;
   final bool         isPaused;
 
+  // 10ms par sample × 2000 = 20 secondes de fenêtre visible
+  static const int   _windowSamples = 2000;
+  // Fondu progressif sur les 500 premiers samples de la fenêtre (~5s)
+  static const int   _fadeSamples   = 500;
+
   const _WaveformPainter({
-    required this.waveData, required this.isRecording, required this.isPaused,
+    required this.waveData,
+    required this.isRecording,
+    required this.isPaused,
   });
 
   @override
@@ -410,56 +418,89 @@ class _WaveformPainter extends CustomPainter {
 
     if (waveData.isEmpty) return;
 
-    final Color color = isRecording ? const Color(0xFFE53935)
-        : isPaused ? const Color(0xFFE53935).withValues(alpha: 0.6)
-        : const Color(0xFF555555);
+    final Color baseColor = isRecording
+        ? const Color(0xFFE53935)
+        : isPaused
+            ? const Color(0xFFE53935).withValues(alpha: 0.6)
+            : const Color(0xFF555555);
 
-    // Toutes les données toujours visibles — compression automatique
-    final n     = waveData.length;
-    final stepX = size.width / (n < 2 ? 2 : n);
+    final n = waveData.length;
 
-    final path = Path()..moveTo(0, centerY);
+    // ── Fenêtre glissante : toujours les _windowSamples derniers ─────────
+    final startIdx = n > _windowSamples ? n - _windowSamples : 0;
+    final visible  = waveData.sublist(startIdx);
+    final nVisible = visible.length;
 
-    for (int i = 0; i < n; i++) {
-      final amp = waveData[i];
-      final x   = i * stepX;
-      final xM  = x + stepX / 2;
-      final x1  = x + stepX;
-      final h   = amp < 0.01 ? 0.0 : amp * size.height * 0.48;
+    if (nVisible < 2) return;
 
-      if (h < 1.0) {
-        path.lineTo(x1, centerY);
+    final stepX = size.width / nVisible;
+
+    // ── Dessine chaque segment avec son opacité ───────────────────────────
+    // Les plus anciens (gauche) s'effacent progressivement
+    for (int i = 0; i < nVisible - 1; i++) {
+      final amp0 = visible[i];
+      final amp1 = visible[i + 1];
+
+      final x0  = i * stepX;
+      final x1  = (i + 1) * stepX;
+      final xM  = (x0 + x1) / 2;
+      final h0  = amp0 < 0.01 ? 0.0 : amp0 * size.height * 0.48;
+      final h1  = amp1 < 0.01 ? 0.0 : amp1 * size.height * 0.48;
+      final hM  = (h0 + h1) / 2;
+
+      // ── Calcule l'opacité selon la position dans la fenêtre ───────────
+      // 0..fadeSamples → fondu de 0.0 à 1.0
+      // fadeSamples..nVisible → opacité pleine
+      double opacity;
+      if (n <= _windowSamples) {
+        // Pas encore 20s → opacité pleine partout
+        opacity = 1.0;
       } else {
-        path.cubicTo(
-          x + stepX * 0.25, centerY,
-          xM - stepX * 0.05, centerY - h,
-          xM, centerY - h,
-        );
-        path.cubicTo(
-          xM + stepX * 0.05, centerY - h,
-          x1 - stepX * 0.25, centerY,
-          x1, centerY,
-        );
+        // Fondu progressif sur les premiers _fadeSamples
+        opacity = i < _fadeSamples
+            ? (i / _fadeSamples).clamp(0.0, 1.0)
+            : 1.0;
       }
+
+      final color = baseColor.withValues(alpha: baseColor.a * opacity);
+
+      if (h0 < 1.0 && h1 < 1.0) continue; // silence → pas de tracé
+
+      final path = Path()..moveTo(x0, centerY);
+      path.cubicTo(
+        x0 + stepX * 0.25, centerY,
+        xM - stepX * 0.05, centerY - hM,
+        xM, centerY - hM,
+      );
+      path.cubicTo(
+        xM + stepX * 0.05, centerY - hM,
+        x1 - stepX * 0.25, centerY,
+        x1, centerY,
+      );
+
+      canvas.drawPath(path, Paint()
+        ..color       = color
+        ..strokeWidth = 1.5
+        ..strokeCap   = StrokeCap.round
+        ..strokeJoin  = StrokeJoin.round
+        ..style       = PaintingStyle.stroke);
     }
 
-    canvas.drawPath(path, Paint()
-      ..color       = color
-      ..strokeWidth = 1.5
-      ..strokeCap   = StrokeCap.round
-      ..strokeJoin  = StrokeJoin.round
-      ..style       = PaintingStyle.stroke);
-
+    // ── Curseur à droite ──────────────────────────────────────────────────
     if (isRecording || isPaused) {
-      canvas.drawLine(Offset(size.width, 0), Offset(size.width, size.height),
-        Paint()..color = const Color(0xFFFF5252)..strokeWidth = 1.5);
+      canvas.drawLine(
+        Offset(size.width, 0),
+        Offset(size.width, size.height),
+        Paint()..color = const Color(0xFFFF5252)..strokeWidth = 1.5,
+      );
     }
   }
 
   @override
   bool shouldRepaint(_WaveformPainter old) =>
       old.waveData.length != waveData.length ||
-      old.isRecording != isRecording || old.isPaused != isPaused;
+      old.isRecording != isRecording ||
+      old.isPaused    != isPaused;
 }
 
 // ── WaveformDisplay — lecture avec vraie forme d'onde ─────────────────────────
@@ -501,8 +542,8 @@ class _WaveformPlaybackPainter extends CustomPainter {
   void paint(Canvas canvas, Size size) {
     final centerY = size.height / 2;
 
-    final n     = waveData.isNotEmpty ? waveData.length : 50;
-    final data  = waveData.isNotEmpty ? waveData
+    final n    = waveData.isNotEmpty ? waveData.length : 50;
+    final data = waveData.isNotEmpty ? waveData
         : List.generate(n, (i) {
             final x = i / n;
             return 0.2 + 0.5 * sin(x * pi * 10).abs() * sin(x * pi);
@@ -511,9 +552,7 @@ class _WaveformPlaybackPainter extends CustomPainter {
     final stepX     = size.width / (n < 2 ? 2 : n);
     final progressX = size.width * progress;
 
-    // Chemin joué (rouge)
     final pathPlayed = Path()..moveTo(0, centerY);
-    // Chemin futur (gris)
     final pathFuture = Path();
     bool futureStarted = false;
 
@@ -535,28 +574,30 @@ class _WaveformPlaybackPainter extends CustomPainter {
       if (h < 1.0) {
         p.lineTo(x1, centerY);
       } else {
-        p.cubicTo(x + stepX * 0.25, centerY, xM - stepX * 0.05, centerY - h, xM, centerY - h);
-        p.cubicTo(xM + stepX * 0.05, centerY - h, x1 - stepX * 0.25, centerY, x1, centerY);
+        p.cubicTo(x + stepX * 0.25, centerY,
+            xM - stepX * 0.05, centerY - h, xM, centerY - h);
+        p.cubicTo(xM + stepX * 0.05, centerY - h,
+            x1 - stepX * 0.25, centerY, x1, centerY);
       }
     }
 
-    final playedPaint = Paint()
+    canvas.drawPath(pathPlayed, Paint()
       ..color = const Color(0xFFE53935)..strokeWidth = 1.5
       ..strokeCap = StrokeCap.round..strokeJoin = StrokeJoin.round
-      ..style = PaintingStyle.stroke;
+      ..style = PaintingStyle.stroke);
 
-    final futurePaint = Paint()
-      ..color = const Color(0xFF3A3A3A)..strokeWidth = 1.5
-      ..strokeCap = StrokeCap.round..strokeJoin = StrokeJoin.round
-      ..style = PaintingStyle.stroke;
-
-    canvas.drawPath(pathPlayed, playedPaint);
-    if (futureStarted) canvas.drawPath(pathFuture, futurePaint);
+    if (futureStarted) {
+      canvas.drawPath(pathFuture, Paint()
+        ..color = const Color(0xFF3A3A3A)..strokeWidth = 1.5
+        ..strokeCap = StrokeCap.round..strokeJoin = StrokeJoin.round
+        ..style = PaintingStyle.stroke);
+    }
   }
 
   @override
   bool shouldRepaint(_WaveformPlaybackPainter old) =>
-      old.progress != progress || old.isPlaying != isPlaying ||
+      old.progress        != progress  ||
+      old.isPlaying       != isPlaying ||
       old.waveData.length != waveData.length;
 }
 
@@ -577,7 +618,8 @@ class _CtrlButton extends StatelessWidget {
           foregroundColor: filled ? AppColors.background : color,
           side: BorderSide(color: filled ? color : const Color(0xFF444444)),
           padding: const EdgeInsets.symmetric(vertical: 14),
-          shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(10)),
+          shape: RoundedRectangleBorder(
+              borderRadius: BorderRadius.circular(10)),
         ),
         icon: Icon(icon, size: 18),
         label: Text(label, style: const TextStyle(fontSize: 14)),
