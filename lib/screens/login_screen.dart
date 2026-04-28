@@ -2,6 +2,7 @@
 import 'dart:async';
 import 'package:flutter/material.dart';
 import 'package:go_router/go_router.dart';
+import 'package:url_launcher/url_launcher.dart';
 import '../services/session_service.dart';
 import '../services/login_api_service.dart';
 import '../database/create_table/create_table_temoin.dart';
@@ -19,17 +20,15 @@ class _LoginScreenState extends State<LoginScreen> {
   final _identifiantCtrl = TextEditingController();
   final _codeCtrl        = TextEditingController();
 
-  bool    _isLoading         = false;
-  bool    _serverAvailable   = false;
-  String  _statusMessage     = 'Vérification du serveur...';
+  bool    _isLoading       = false;
+  bool    _serverAvailable = false;
+  String  _statusMessage   = 'Vérification du serveur...';
 
   @override
   void initState() {
     super.initState();
     _checkServer();
   }
-
-  // ── Appel unique au démarrage de l'écran ──────────────────────────────────
 
   Future<void> _checkServer() async {
     final result = await LoginApiService.checkServerStatus();
@@ -41,22 +40,15 @@ class _LoginScreenState extends State<LoginScreen> {
     }
   }
 
-  // ── Insère ou met à jour l'utilisateur dans SQLite local ──────────────────
-
   Future<void> _upsertUserInSqlite({
     required String id,
     required String identifiant,
     required String password,
   }) async {
     final db = CreateTableTemoin.db;
-
     final existing = await db.query(
-      'login_user',
-      where:     'id = ?',
-      whereArgs: [id],
-      limit:     1,
+      'login_user', where: 'id = ?', whereArgs: [id], limit: 1,
     );
-
     if (existing.isEmpty) {
       await db.insert('login_user', {
         'id':          id,
@@ -66,20 +58,13 @@ class _LoginScreenState extends State<LoginScreen> {
         'created_at':  DateTime.now().toIso8601String(),
       });
     } else {
-      await db.update(
-        'login_user',
-        {
-          'identifiant': identifiant,
-          'password':    password,
-          'last_login':  DateTime.now().toIso8601String(),
-        },
-        where:     'id = ?',
-        whereArgs: [id],
-      );
+      await db.update('login_user', {
+        'identifiant': identifiant,
+        'password':    password,
+        'last_login':  DateTime.now().toIso8601String(),
+      }, where: 'id = ?', whereArgs: [id]);
     }
   }
-
-  // ── Login principal ───────────────────────────────────────────────────────
 
   Future<void> _onLogin() async {
     final identifiant = _identifiantCtrl.text.trim();
@@ -90,7 +75,6 @@ class _LoginScreenState extends State<LoginScreen> {
       return;
     }
 
-    // Revérifie le serveur au moment du clic
     setState(() {
       _isLoading     = true;
       _statusMessage = 'Vérification du serveur...';
@@ -116,7 +100,6 @@ class _LoginScreenState extends State<LoginScreen> {
       return;
     }
 
-    // ── Envoie identifiant + password vers FastAPI ─────────────────────────
     final result = await LoginApiService.login(
       identifiant: identifiant,
       password:    password,
@@ -136,7 +119,6 @@ class _LoginScreenState extends State<LoginScreen> {
       return;
     }
 
-    // ── Connexion réussie → upsert SQLite ──────────────────────────────────
     await _upsertUserInSqlite(
       id:          result.userId!,
       identifiant: identifiant,
@@ -145,9 +127,17 @@ class _LoginScreenState extends State<LoginScreen> {
 
     if (!mounted) return;
     setState(() => _isLoading = false);
-
     await SessionService.login(result.userId!, identifiant);
     context.go('/list_temoin');
+  }
+
+  Future<void> _openMotDePasseOublie() async {
+    final uri = Uri.parse(
+      'https://react-web-transcriptor-conta.vercel.app/mot-de-passe-oublie',
+    );
+    if (await canLaunchUrl(uri)) {
+      await launchUrl(uri, mode: LaunchMode.externalApplication);
+    }
   }
 
   void _snack(String msg) {
@@ -233,7 +223,26 @@ class _LoginScreenState extends State<LoginScreen> {
                   IdentifiantField(controller: _identifiantCtrl),
                   const SizedBox(height: 16),
                   CodeAccesField(controller: _codeCtrl),
-                  const SizedBox(height: 28),
+                  const SizedBox(height: 8),
+
+                  // ── Mot de passe oublié ──────────────────────────────────
+                  Align(
+                    alignment: Alignment.centerRight,
+                    child: GestureDetector(
+                      onTap: _openMotDePasseOublie,
+                      child: Text(
+                        'Mot de passe oublié ? Cliquer ici',
+                        style: AppTextStyles.label.copyWith(
+                          fontSize:      12,
+                          color:         const Color(0xFF58A6FF),
+                          decoration:    TextDecoration.underline,
+                          decorationColor: const Color(0xFF58A6FF),
+                        ),
+                      ),
+                    ),
+                  ),
+
+                  const SizedBox(height: 24),
 
                   LoginButton(
                     onPressed: _isLoading ? null : _onLogin,

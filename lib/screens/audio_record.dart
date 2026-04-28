@@ -123,7 +123,7 @@ class _AudioRecordSheetState extends State<AudioRecordSheet> {
       if (!status.isGranted) throw Exception('Permission microphone refusée');
       await _recorder.openRecorder();
       await _recorder.setSubscriptionDuration(
-        const Duration(milliseconds: 80),
+        const Duration(milliseconds: 10),
       );
       _recorderOpen = true;
     }
