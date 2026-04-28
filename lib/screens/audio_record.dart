@@ -1,6 +1,6 @@
 // audio_record.dart — VERSION ANDROID/iOS
 // flutter_sound pour l'enregistrement
-// Waveform basé sur la vraie amplitude du microphone.
+// Waveform basé sur la vraie amplitude du microphone
 
 import 'dart:async';
 import 'dart:io';
@@ -78,14 +78,14 @@ class _AudioRecordSheetState extends State<AudioRecordSheet> {
 
       double normalized = ((db - effectiveMin) / effectiveRange).clamp(0.0, 1.0);
 
-      if (normalized < 0.62) {
+      if (normalized < 0.75) {
         final smoothed = _lastAmp * 0.08;
         _lastAmp = smoothed;
         setState(() => _waveData.add(smoothed));
         return;
       }
 
-      normalized = ((normalized - 0.62) / 0.38).clamp(0.0, 1.0);
+      normalized = ((normalized - 0.75) / 0.25).clamp(0.0, 1.0);
       if (normalized < 0.05) normalized = 0.0;
       if (normalized > 0.0) normalized = pow(normalized, 0.6).toDouble();
 
@@ -118,7 +118,7 @@ class _AudioRecordSheetState extends State<AudioRecordSheet> {
       if (!status.isGranted) throw Exception('Permission microphone refusée');
       await _recorder.openRecorder();
       await _recorder.setSubscriptionDuration(
-        const Duration(milliseconds: 10),
+        const Duration(milliseconds: 80),
       );
       _recorderOpen = true;
     }
@@ -398,10 +398,10 @@ class _WaveformPainter extends CustomPainter {
   final bool         isRecording;
   final bool         isPaused;
 
-  // 10ms par sample × 2000 = 20 secondes de fenêtre visible
-  static const int   _windowSamples = 2000;
-  // Fondu progressif sur les 500 premiers samples de la fenêtre (~5s)
-  static const int   _fadeSamples   = 500;
+  // 80ms par sample × 250 = 20 secondes de fenêtre visible
+  static const int   _windowSamples = 250;
+  // Fondu progressif sur les 60 premiers samples (~5s)
+  static const int   _fadeSamples   = 60;
 
   const _WaveformPainter({
     required this.waveData,
