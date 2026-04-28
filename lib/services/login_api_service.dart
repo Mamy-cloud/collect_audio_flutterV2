@@ -34,10 +34,11 @@ class LoginApiService {
     }
 
     // 3. Ping le serveur FastAPI
+    // Render cold start peut prendre 30-60s → timeout à 60s
     try {
       final response = await http
           .get(Uri.parse(ApiConfig.statusLogin))
-          .timeout(const Duration(seconds: 5));
+          .timeout(const Duration(seconds: 80));
 
       if (response.statusCode == 200) {
         final body = jsonDecode(response.body);
@@ -64,7 +65,7 @@ class LoginApiService {
     try {
       final response = await http
           .head(Uri.parse('https://www.google.com'))
-          .timeout(const Duration(seconds: 4));
+          .timeout(const Duration(seconds: 14));
       return response.statusCode < 500;
     } catch (_) {
       return false;
@@ -87,7 +88,7 @@ class LoginApiService {
               'password':    password,
             }),
           )
-          .timeout(const Duration(seconds: 15));
+          .timeout(const Duration(seconds: 80));
 
       if (response.statusCode == 200) {
         final body = jsonDecode(response.body);

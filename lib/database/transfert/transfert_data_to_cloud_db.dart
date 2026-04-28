@@ -43,11 +43,12 @@ class TransfertDataToCloudDb {
     return results.isNotEmpty && !results.contains(ConnectivityResult.none);
   }
 
+  // Render cold start peut prendre 30-60s → timeout à 60s
   static Future<bool> checkServerHealth() async {
     try {
       final response = await http
           .get(Uri.parse(ApiConfig.healthCloud))
-          .timeout(const Duration(seconds: 10));
+          .timeout(const Duration(seconds: 80));
       return response.statusCode == 200;
     } catch (_) {
       return false;
@@ -70,16 +71,14 @@ class TransfertDataToCloudDb {
               'id_questionnaires': ids,
             }),
           )
-          .timeout(const Duration(seconds: 15));
+          .timeout(const Duration(seconds: 80));
 
       if (response.statusCode == 200) {
         final body = jsonDecode(response.body);
         return List<String>.from(body['ids_a_transferer'] ?? []);
       }
-      // En cas d'erreur serveur → transfère tout par sécurité
       return ids;
     } catch (_) {
-      // En cas d'erreur réseau → transfère tout par sécurité
       return ids;
     }
   }
@@ -91,7 +90,6 @@ class TransfertDataToCloudDb {
     _isRunning = true;
 
     try {
-      // 1. Vérifie le serveur
       final serverOk = await checkServerHealth();
       if (!serverOk) {
         onError?.call('Serveur indisponible. Réessayez plus tard.');
@@ -100,7 +98,6 @@ class TransfertDataToCloudDb {
 
       final db = CreateTableTemoin.db;
 
-      // 2. Récupère les collectes non synchronisées
       final collectes = await db.query(
         'collect_info_from_temoin',
         where:     'synced = ?',
@@ -112,23 +109,16 @@ class TransfertDataToCloudDb {
         return;
       }
 
-      // 3. Récupère tous les id_questionnaire non synchronisés
       final allIds = collectes
           .where((c) => c['id_questionnaire'] != null)
           .map((c) => c['id_questionnaire'] as String)
           .toList();
 
-      // 4. Demande au serveur quels ids sont déjà en DB
-      final userId   = collectes.first['user_id'] as String? ?? '';
-      final idsAFaire = await _checkIdsWithServer(
-        userId: userId,
-        ids:    allIds,
-      );
+      final userId    = collectes.first['user_id'] as String? ?? '';
+      final idsAFaire = await _checkIdsWithServer(userId: userId, ids: allIds);
 
-      // 5. Filtre uniquement les collectes à transférer
       final collectesAFaire = collectes.where((c) {
         final idQ = c['id_questionnaire'] as String?;
-        // Si pas d'id_questionnaire → on transfère quand même
         if (idQ == null) return true;
         return idsAFaire.contains(idQ);
       }).toList();
@@ -143,9 +133,9 @@ class TransfertDataToCloudDb {
       onProgress?.call(0, collectesAFaire.length);
 
       for (final collecte in collectesAFaire) {
-        final collectId      = collecte['id'] as String;
+        final collectId       = collecte['id'] as String;
         final idQuestionnaire = collecte['id_questionnaire'] as String? ?? collectId;
-        final label          = 'Collecte $collectId';
+        final label           = 'Collecte $collectId';
 
         onItemStatus?.call(label, 'uploading');
 
@@ -219,8 +209,9 @@ class TransfertDataToCloudDb {
       ));
     }
 
-    final streamed  = await request.send().timeout(const Duration(seconds: 60));
-    final response  = await http.Response.fromStream(streamed);
+    // Upload audio peut être long → timeout généreux
+    final streamed = await request.send().timeout(const Duration(seconds: 160));
+    final response = await http.Response.fromStream(streamed);
 
     if (response.statusCode == 200) {
       final body = jsonDecode(response.body);
