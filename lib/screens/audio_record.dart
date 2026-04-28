@@ -435,56 +435,70 @@ class _WaveformPainter extends CustomPainter {
 
     final stepX = size.width / nVisible;
 
-    // ── Dessine chaque segment avec son opacité ───────────────────────────
-    // Les plus anciens (gauche) s'effacent progressivement
+    // ── Dessine en un seul path continu avec opacité par segment ────────
+    // On groupe les segments par opacité similaire pour éviter trop d'appels
+    Path? currentPath;
+    double currentOpacity = -1;
+
+    void flushPath(Canvas canvas, Color baseColor) {
+      if (currentPath == null) return;
+      canvas.drawPath(currentPath!, Paint()
+        ..color       = baseColor.withValues(alpha: baseColor.a * currentOpacity)
+        ..strokeWidth = 1.5
+        ..strokeCap   = StrokeCap.round
+        ..strokeJoin  = StrokeJoin.round
+        ..style       = PaintingStyle.stroke);
+      currentPath = null;
+    }
+
     for (int i = 0; i < nVisible - 1; i++) {
       final amp0 = visible[i];
       final amp1 = visible[i + 1];
 
-      final x0  = i * stepX;
-      final x1  = (i + 1) * stepX;
-      final xM  = (x0 + x1) / 2;
-      final h0  = amp0 < 0.01 ? 0.0 : amp0 * size.height * 0.48;
-      final h1  = amp1 < 0.01 ? 0.0 : amp1 * size.height * 0.48;
-      final hM  = (h0 + h1) / 2;
+      final x0 = i * stepX;
+      final x1 = (i + 1) * stepX;
+      final xM = (x0 + x1) / 2;
+      final h0 = amp0 < 0.01 ? 0.0 : amp0 * size.height * 0.48;
+      final h1 = amp1 < 0.01 ? 0.0 : amp1 * size.height * 0.48;
+      final hM = (h0 + h1) / 2;
 
-      // ── Calcule l'opacité selon la position dans la fenêtre ───────────
-      // 0..fadeSamples → fondu de 0.0 à 1.0
-      // fadeSamples..nVisible → opacité pleine
       double opacity;
       if (n <= _windowSamples) {
-        // Pas encore 20s → opacité pleine partout
         opacity = 1.0;
       } else {
-        // Fondu progressif sur les premiers _fadeSamples
         opacity = i < _fadeSamples
             ? (i / _fadeSamples).clamp(0.0, 1.0)
             : 1.0;
       }
 
-      final color = baseColor.withValues(alpha: baseColor.a * opacity);
+      // Nouvelle opacité → flush et recrée le path
+      if ((opacity - currentOpacity).abs() > 0.05) {
+        flushPath(canvas, baseColor);
+        currentOpacity = opacity;
+        currentPath    = Path()..moveTo(x0, centerY);
+      } else if (currentPath == null) {
+        currentPath = Path()..moveTo(x0, centerY);
+      }
 
-      if (h0 < 1.0 && h1 < 1.0) continue; // silence → pas de tracé
-
-      final path = Path()..moveTo(x0, centerY);
-      path.cubicTo(
-        x0 + stepX * 0.25, centerY,
-        xM - stepX * 0.05, centerY - hM,
-        xM, centerY - hM,
-      );
-      path.cubicTo(
-        xM + stepX * 0.05, centerY - hM,
-        x1 - stepX * 0.25, centerY,
-        x1, centerY,
-      );
-
-      canvas.drawPath(path, Paint()
-        ..color       = color
-        ..strokeWidth = 1.5
-        ..strokeCap   = StrokeCap.round
-        ..strokeJoin  = StrokeJoin.round
-        ..style       = PaintingStyle.stroke);
+      if (h0 < 1.0 && h1 < 1.0) {
+        // Silence → ligne plate sur la ligne centrale
+        currentPath!.lineTo(x1, centerY);
+      } else {
+        currentPath!.cubicTo(
+          x0 + stepX * 0.25, centerY,
+          xM - stepX * 0.05, centerY - hM,
+          xM, centerY - hM,
+        );
+        currentPath!.cubicTo(
+          xM + stepX * 0.05, centerY - hM,
+          x1 - stepX * 0.25, centerY,
+          x1, centerY,
+        );
+      }
     }
+
+    // Flush le dernier segment
+    flushPath(canvas, baseColor);
 
     // ── Curseur à droite ──────────────────────────────────────────────────
     if (isRecording || isPaused) {
