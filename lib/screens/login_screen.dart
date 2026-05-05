@@ -7,6 +7,7 @@ import '../services/session_service.dart';
 import '../services/login_api_service.dart';
 import '../database/create_table/create_table_temoin.dart';
 import '../widgets/global/app_styles.dart';
+import 'package:shared_preferences/shared_preferences.dart';
 import '../widgets/screens_widgets/login_widgets.dart';
 
 class LoginScreen extends StatefulWidget {
@@ -28,6 +29,19 @@ class _LoginScreenState extends State<LoginScreen> {
   void initState() {
     super.initState();
     _checkServer();
+    _loadSavedCredentials();
+  }
+
+  Future<void> _loadSavedCredentials() async {
+    final prefs = await SharedPreferences.getInstance();
+    final savedId  = prefs.getString('session_identifiant');
+    final savedPwd = prefs.getString('saved_password');
+    if (savedId != null && mounted) {
+      setState(() {
+        _identifiantCtrl.text = savedId;
+        if (savedPwd != null) _codeCtrl.text = savedPwd;
+      });
+    }
   }
 
   Future<void> _checkServer() async {
@@ -128,6 +142,10 @@ class _LoginScreenState extends State<LoginScreen> {
 
     // Sauvegarde la session → restera connecté hors ligne
     await SessionService.login(result.userId!, identifiant);
+
+    // Mémorise le mot de passe pour pré-remplir au prochain login
+    final prefs = await SharedPreferences.getInstance();
+    await prefs.setString('saved_password', password);
     context.go('/list_temoin');
   }
 
