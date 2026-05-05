@@ -1,4 +1,5 @@
-// setting_widget.dart
+// setting_widget.dart.
+
 import 'package:flutter/material.dart';
 import '../global/app_styles.dart';
 
