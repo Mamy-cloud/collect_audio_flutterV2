@@ -1,86 +1,52 @@
-/* // session_service.dart
-// Gestion de l'utilisateur connecté en mémoire + persistance SQLite
+// session_service.dart
+// Gère la session utilisateur avec persistance locale (SharedPreferences)
+// → première connexion en ligne, ensuite hors ligne possible
 
-import '../database/create_table/create_table_temoin.dart';
+import 'package:shared_preferences/shared_preferences.dart';
 
 class SessionService {
+  static const _keyUserId      = 'session_user_id';
+  static const _keyIdentifiant = 'session_identifiant';
+
   static String? _currentUserId;
   static String? _currentIdentifiant;
 
+  // ── Getters ──────────────────────────────────────────────────────────────
   static String? get currentUserId      => _currentUserId;
   static String? get currentIdentifiant => _currentIdentifiant;
+  static bool    get isLoggedIn         => _currentUserId != null;
 
-  static bool get isLoggedIn => _currentUserId != null;
+  // ── Init au démarrage — restaure la session si elle existe ───────────────
+  static Future<bool> restoreSession() async {
+    final prefs = await SharedPreferences.getInstance();
+    final userId      = prefs.getString(_keyUserId);
+    final identifiant = prefs.getString(_keyIdentifiant);
 
-  // ─── Connexion : met à jour la mémoire + last_login dans SQLite ───────────
+    if (userId != null && identifiant != null) {
+      _currentUserId      = userId;
+      _currentIdentifiant = identifiant;
+      return true;   // session restaurée → pas besoin de se reconnecter
+    }
+    return false;    // pas de session → afficher login
+  }
 
+  // ── Login — appelé après authentification réussie ────────────────────────
   static Future<void> login(String userId, String identifiant) async {
     _currentUserId      = userId;
     _currentIdentifiant = identifiant;
-    // Met à jour last_login pour que ce user soit restauré au prochain démarrage
-    await CreateTableTemoin.updateLastLogin(userId);
+
+    final prefs = await SharedPreferences.getInstance();
+    await prefs.setString(_keyUserId,      userId);
+    await prefs.setString(_keyIdentifiant, identifiant);
   }
 
-  // ─── Déconnexion : vide la mémoire ────────────────────────────────────────
-
-  static void logout() {
+  // ── Logout — efface la session persistante ───────────────────────────────
+  static Future<void> logout() async {
     _currentUserId      = null;
     _currentIdentifiant = null;
-  }
 
-  // ─── Restaure la session depuis SQLite au démarrage de l'appli ───────────
-
-  static Future<bool> restoreSession() async {
-    final user = await CreateTableTemoin.getLastLoggedUser();
-    if (user == null) return false;
-
-    _currentUserId      = user['id']          as String;
-    _currentIdentifiant = user['identifiant'] as String;
-    return true;
-  }
-}
- */
-// session_service.dart
-
-import '../database/create_table/create_table_temoin.dart';
-
-class SessionService {
-  static String? _currentUserId;
-  static String? _currentIdentifiant;
-
-  static String? get currentUserId => _currentUserId;
-  static String? get currentIdentifiant => _currentIdentifiant;
-
-  static bool get isLoggedIn => _currentUserId != null;
-
-  // ─── LOGIN ─────────────────────────────────────────────
-
-  static Future<void> login(String userId, String identifiant) async {
-    _currentUserId = userId;
-    _currentIdentifiant = identifiant;
-
-    await CreateTableTemoin.updateLastLogin(userId);
-  }
-
-  // ─── LOGOUT (IMPORTANT FIX) ────────────────────────────
-
-  static Future<void> logout() async {
-    _currentUserId = null;
-    _currentIdentifiant = null;
-
-    // 🔥 SUPPRESSION de la session persistée SQLite
-    await CreateTableTemoin.clearLastLogin();
-  }
-
-  // ─── RESTORE SESSION (UNIQUEMENT SPLASH) ──────────────
-
-  static Future<bool> restoreSession() async {
-    final user = await CreateTableTemoin.getLastLoggedUser();
-    if (user == null) return false;
-
-    _currentUserId = user['id'] as String;
-    _currentIdentifiant = user['identifiant'] as String;
-
-    return true;
+    final prefs = await SharedPreferences.getInstance();
+    await prefs.remove(_keyUserId);
+    await prefs.remove(_keyIdentifiant);
   }
 }

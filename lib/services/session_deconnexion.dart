@@ -1,48 +1,34 @@
 // session_deconnexion.dart
-// Gestion de la déconnexion
+// Déconnexion avec confirmation — efface la session persistante
 
 import 'package:flutter/material.dart';
 import 'package:go_router/go_router.dart';
-import '../../../services/session_service.dart';
+import '../services/session_service.dart';
+import '../widgets/global/app_styles.dart';
 
-/* class SessionDeconnexion {
-
-  /// Déconnecte l'utilisateur et redirige vers /login
-  static Future<void> logout(BuildContext context) async {
-    // Vide la session en mémoire
-    SessionService.logout();
-
-    // Redirige vers /login en remplaçant toute la pile de navigation
-    if (context.mounted) {
-      context.go('/login');
-    }
-  }
-
-  /// Affiche une confirmation avant de déconnecter
+class SessionDeconnexion {
   static Future<void> logoutWithConfirm(BuildContext context) async {
     final confirmed = await showDialog<bool>(
       context: context,
-      builder: (dialogCtx) => AlertDialog(
-        backgroundColor: const Color(0xFF111111),
-        shape: RoundedRectangleBorder(
-            borderRadius: BorderRadius.circular(16)),
+      builder: (ctx) => AlertDialog(
+        backgroundColor: AppColors.surface,
         title: const Text(
-          'Se déconnecter',
-          style: TextStyle(color: Colors.white, fontSize: 17),
+          'Déconnexion',
+          style: TextStyle(color: AppColors.textPrimary),
         ),
         content: const Text(
-          'Voulez-vous vraiment vous déconnecter ?',
-          style: TextStyle(color: Color(0xFF9E9E9E), fontSize: 14),
+          'Voulez-vous vous déconnecter ?\nVos données locales seront conservées.',
+          style: TextStyle(color: AppColors.textMuted),
         ),
         actions: [
           TextButton(
-            onPressed: () => Navigator.of(dialogCtx).pop(false),
+            onPressed: () => Navigator.of(ctx).pop(false),
             child: const Text('Annuler',
-                style: TextStyle(color: Color(0xFF9E9E9E))),
+                style: TextStyle(color: AppColors.textMuted)),
           ),
           TextButton(
-            onPressed: () => Navigator.of(dialogCtx).pop(true),
-            child: const Text('Se déconnecter',
+            onPressed: () => Navigator.of(ctx).pop(true),
+            child: const Text('Déconnecter',
                 style: TextStyle(color: Color(0xFFE53935))),
           ),
         ],
@@ -50,41 +36,8 @@ import '../../../services/session_service.dart';
     );
 
     if (confirmed == true && context.mounted) {
-      await logout(context);
-    }
-  }
-} */
-class SessionDeconnexion {
-
-  static Future<void> logout(BuildContext context) async {
-    await SessionService.logout();
-
-    if (context.mounted) {
+      await SessionService.logout();
       context.go('/login');
-    }
-  }
-
-  static Future<void> logoutWithConfirm(BuildContext context) async {
-    final confirmed = await showDialog<bool>(
-      context: context,
-      builder: (dialogCtx) => AlertDialog(
-        title: const Text('Se déconnecter'),
-        content: const Text('Voulez-vous vraiment vous déconnecter ?'),
-        actions: [
-          TextButton(
-            onPressed: () => Navigator.pop(dialogCtx, false),
-            child: const Text('Annuler'),
-          ),
-          TextButton(
-            onPressed: () => Navigator.pop(dialogCtx, true),
-            child: const Text('Déconnecter'),
-          ),
-        ],
-      ),
-    );
-
-    if (confirmed == true && context.mounted) {
-      await logout(context);
     }
   }
 }

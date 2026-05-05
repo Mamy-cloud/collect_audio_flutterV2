@@ -54,14 +54,12 @@ class _LoginScreenState extends State<LoginScreen> {
         'id':          id,
         'identifiant': identifiant,
         'password':    password,
-        'last_login':  DateTime.now().toIso8601String(),
         'created_at':  DateTime.now().toIso8601String(),
       });
     } else {
       await db.update('login_user', {
         'identifiant': identifiant,
         'password':    password,
-        'last_login':  DateTime.now().toIso8601String(),
       }, where: 'id = ?', whereArgs: [id]);
     }
   }
@@ -90,7 +88,7 @@ class _LoginScreenState extends State<LoginScreen> {
 
     if (!check.internetAvailable) {
       setState(() => _isLoading = false);
-      _snack('Connexion Internet requise pour se connecter.');
+      _snack('Connexion Internet requise pour la première connexion.');
       return;
     }
 
@@ -127,6 +125,8 @@ class _LoginScreenState extends State<LoginScreen> {
 
     if (!mounted) return;
     setState(() => _isLoading = false);
+
+    // Sauvegarde la session → restera connecté hors ligne
     await SessionService.login(result.userId!, identifiant);
     context.go('/list_temoin');
   }
@@ -184,7 +184,7 @@ class _LoginScreenState extends State<LoginScreen> {
                   const LoginHeroImage(assetPath: 'assets/img/logo_essai.png'),
                   const SizedBox(height: 20),
 
-                  // ── Statut serveur ───────────────────────────────────────
+                  // ── Statut serveur ─────────────────────────────────────
                   Row(
                     mainAxisAlignment: MainAxisAlignment.center,
                     children: [
@@ -225,7 +225,6 @@ class _LoginScreenState extends State<LoginScreen> {
                   CodeAccesField(controller: _codeCtrl),
                   const SizedBox(height: 8),
 
-                  // ── Mot de passe oublié ──────────────────────────────────
                   Align(
                     alignment: Alignment.centerRight,
                     child: GestureDetector(
