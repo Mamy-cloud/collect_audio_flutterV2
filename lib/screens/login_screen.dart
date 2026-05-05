@@ -100,18 +100,24 @@ class _LoginScreenState extends State<LoginScreen> {
       });
     }
 
-    if (!check.internetAvailable) {
+    // ── Connexion hors ligne via SQLite ──────────────────────────────────
+    if (!check.internetAvailable || !check.serverAvailable) {
+      final localUser = await CreateTableTemoin.login(identifiant, password);
+      if (localUser != null) {
+        if (!mounted) return;
+        setState(() => _isLoading = false);
+        await SessionService.login(localUser['id'] as String, identifiant);
+        context.go('/list_temoin');
+        return;
+      }
       setState(() => _isLoading = false);
-      _snack('Connexion Internet requise pour la première connexion.');
+      _snack(!check.internetAvailable
+          ? 'Pas de connexion. Identifiants non reconnus localement.'
+          : 'Serveur inaccessible. Identifiants non reconnus localement.');
       return;
     }
 
-    if (!check.serverAvailable) {
-      setState(() => _isLoading = false);
-      _snack('Serveur inaccessible. Réessayez plus tard.');
-      return;
-    }
-
+    // ── Connexion en ligne via serveur ────────────────────────────────────
     final result = await LoginApiService.login(
       identifiant: identifiant,
       password:    password,
@@ -131,6 +137,7 @@ class _LoginScreenState extends State<LoginScreen> {
       return;
     }
 
+    // Sauvegarde dans SQLite pour les prochaines connexions hors ligne
     await _upsertUserInSqlite(
       id:          result.userId!,
       identifiant: identifiant,
@@ -140,10 +147,8 @@ class _LoginScreenState extends State<LoginScreen> {
     if (!mounted) return;
     setState(() => _isLoading = false);
 
-    // Sauvegarde la session → restera connecté hors ligne
     await SessionService.login(result.userId!, identifiant);
 
-    // Mémorise le mot de passe pour pré-remplir au prochain login
     final prefs = await SharedPreferences.getInstance();
     await prefs.setString('saved_password', password);
     context.go('/list_temoin');
